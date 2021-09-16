@@ -43,12 +43,12 @@ public:
     Vector<ValueRecovery> args;
     unsigned numLocals { UINT_MAX };
     unsigned numPassedArgs { UINT_MAX };
-#if USE(JSVALUE64)
     RegisterMap<ValueRecovery> registers;
+#if USE(JSVALUE64)
     GPRReg numberTagRegister { InvalidGPRReg };
+#endif
 
     void setupCalleeSaveRegisters(CodeBlock*);
-#endif
     ValueRecovery callee;
 };
 
