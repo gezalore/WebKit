@@ -55,6 +55,11 @@ CallFrameShuffler::CallFrameShuffler(CCallHelpers& jit, const CallFrameShuffleDa
     // ... as well as the callee saved registers
     m_lockedRegisters.exclude(RegisterSet::vmCalleeSaveRegisters());
 
+#if CPU(ARM_THUMB2)
+    // Do not use the linkRegister, as it is loaded manually and is involved in calls
+    lockGPR(MacroAssembler::linkRegister);
+#endif
+
     ASSERT(!data.callee.isInJSStack() || data.callee.virtualRegister().isLocal());
     addNew(CallFrameSlot::callee, data.callee);
 

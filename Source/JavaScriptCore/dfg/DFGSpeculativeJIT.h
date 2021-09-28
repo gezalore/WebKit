@@ -202,6 +202,31 @@ public:
         m_fprs.unlock(reg);
     }
 
+#if CPU(ARM_THUMB2)
+    // RAII style utility for temporarily locking a register
+    template<typename RegType>
+    class LockRegister final {
+        WTF_MAKE_NONCOPYABLE(LockRegister);
+        WTF_FORBID_HEAP_ALLOCATION;
+    public:
+        LockRegister(SpeculativeJIT& jit, RegType reg)
+            : m_jit(jit)
+            , m_reg(reg)
+        {
+            m_jit.lock(m_reg);
+        }
+
+        ~LockRegister()
+        {
+            m_jit.unlock(m_reg);
+        }
+
+    private:
+        SpeculativeJIT& m_jit;
+        const RegType m_reg;
+    };
+#endif
+
     // Used to check whether a child node is on its last use,
     // and its machine registers may be reused.
     bool canReuse(Node* node)

@@ -586,6 +586,11 @@ void SpeculativeJIT::emitCall(Node* node)
         break;
     }
 
+#if CPU(ARM_THUMB2)
+    // Calls involve the link register, so do not use it for general allocation
+    LockRegister lockLinkRegister(*this, ARMRegisters::lr);
+#endif
+
     Edge calleeEdge = m_jit.graph().child(node, 0);
     GPRReg calleeTagGPR = InvalidGPRReg;
     GPRReg calleePayloadGPR = InvalidGPRReg;
