@@ -8970,6 +8970,8 @@ void SpeculativeJIT::compileCreateRest(Node* node)
 {
     ASSERT(node->op() == CreateRest);
 
+    LockRegister lockLR(*this, ARMRegisters::lr);
+
     if (m_jit.graph().isWatchingHavingABadTimeWatchpoint(node)) {
         SpeculateStrictInt32Operand arrayLength(this, node->child1());
         GPRTemporary arrayResult(this);

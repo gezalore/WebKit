@@ -737,9 +737,9 @@ void JIT::compileAndLinkWithoutFinalizing(JITCompilationEffort effort)
     if (m_disassembler)
         m_disassembler->setStartOfCode(entryLabel);
 
-    // Just add a little bit of randomness to the codegen
-    if (random() & 1)
-        nop();
+//    // Just add a little bit of randomness to the codegen
+//    if (random() & 1)
+//        nop();
 
     emitFunctionPrologue();
     emitPutToCallFrameHeader(m_codeBlock, CallFrameSlot::codeBlock);
