@@ -31,6 +31,16 @@ require 'tempfile'
 require 'uri'
 require 'yaml'
 
+$startTime = Time.now
+$lastTime = $startTime
+
+def reportTime(tag)
+  now = Time.now
+  $stdout.puts "#{tag} #{now - $startTime} +#{now - $lastTime}"
+  $stdout.flush
+  $lastTime = now
+end
+
 module URI
     class SSH < Generic
         DEFAULT_PORT = 22
@@ -1954,10 +1964,14 @@ def prepareBundle
         FileUtils.cp_r HELPERS_PATH, ".helpers"
     }
 
+
+    reportTime("pre coll")
     ARGV.each {
         | collection |
         handleCollection(collection)
+        reportTime("post coll #{collection}")
     }
+
 
     puts
 end
@@ -2052,6 +2066,8 @@ def prepareTestRunner(remoteIndex=0)
         plan.index = index
     }
 
+    reportTime(" prepareMakeTestRunner a")
+
     Dir.mkdir($runnerDir) unless $runnerDir.directory?
     toDelete = []
     Dir.foreach($runnerDir) {
@@ -2060,7 +2076,9 @@ def prepareTestRunner(remoteIndex=0)
             toDelete << filename
         end
     }
-    
+
+    reportTime(" prepareMakeTestRunner b")
+
     toDelete.each {
         | filename |
         File.unlink($runnerDir + filename)
@@ -2509,7 +2527,10 @@ def runNormal
     raise if $bundle or $tarball
 
     prepareBundle
+    reportTime("end prepareBundle")
     prepareTestRunner
+    reportTime("end prepareTestRunner")
+    exit(0)
     runTestRunner
     cleanEmptyResultFiles
     detectFailures
