@@ -695,7 +695,7 @@
 #endif
 
 /* This controls whether B3 is built. B3 is needed for FTL JIT and WebAssembly */
-#if ENABLE(FTL_JIT)
+#if ENABLE(FTL_JIT) || CPU(ARM)
 #define ENABLE_B3_JIT 1
 #endif
 

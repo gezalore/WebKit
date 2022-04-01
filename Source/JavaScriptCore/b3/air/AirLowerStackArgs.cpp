@@ -127,7 +127,10 @@ void lowerStackArgs(Code& code)
                         result = Arg::addr(Air::Tmp(MacroAssembler::stackPointerRegister), offsetFromSP);
                         if (result.isValidForm(width))
                             return result;
-#if CPU(ARM64) || CPU(RISCV64)
+#if CPU(ARM64) || CPU(RISCV64) || CPU(ARM)
+#if CPU(ARM)
+                        UNREACHABLE_FOR_PLATFORM();
+#endif
                         ASSERT(pinnedExtendedOffsetAddrRegister());
                         Air::Tmp tmp = Air::Tmp(*pinnedExtendedOffsetAddrRegister());
 
@@ -158,7 +161,10 @@ void lowerStackArgs(Code& code)
                             RELEASE_ASSERT(slot->byteSize() == 8);
                             RELEASE_ASSERT(width == Width32);
 
-#if CPU(ARM64) || CPU(RISCV64)
+#if CPU(ARM64) || CPU(RISCV64) || CPU(ARM)
+#if CPU(ARM)
+                            UNREACHABLE_FOR_PLATFORM();
+#endif
                             Air::Opcode storeOpcode = Store32;
                             Air::Arg::Kind operandKind = Arg::ZeroReg;
                             Air::Arg operand = Arg::zeroReg();

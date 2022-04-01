@@ -122,6 +122,8 @@ void testSimple()
     CHECK(compileAndRun<int>(proc) == 42);
 }
 
+#if 0
+
 // Use this to put a constant into a register without Air being able to see the constant.
 template<typename T>
 void loadConstantImpl(BasicBlock* block, T value, B3::Air::Opcode move, Tmp tmp, Tmp scratch)
@@ -2509,6 +2511,7 @@ void testEarlyClobberInterference()
         CHECK(actualResult == expectedResult);
     }
 }
+#endif
 
 #define PREFIX "O", Options::defaultB3OptLevel(), ": "
 
@@ -2533,7 +2536,8 @@ void run(const char* filter)
     };
 
     RUN(testSimple());
-    
+
+#if 0
     RUN(testShuffleSimpleSwap());
     RUN(testShuffleSimpleShift());
     RUN(testShuffleLongShift());
@@ -2609,6 +2613,7 @@ void run(const char* filter)
 
     RUN(testEarlyAndLateUseOfSameTmp());
     RUN(testEarlyClobberInterference());
+#endif
 
     if (tasks.isEmpty())
         usage();

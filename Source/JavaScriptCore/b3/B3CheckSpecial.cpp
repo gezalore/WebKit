@@ -189,7 +189,11 @@ CCallHelpers::Jump CheckSpecial::generate(Inst& inst, CCallHelpers& jit, Generat
                         GPRReg valueGPR = args[1].gpr();
                         GPRReg scratchGPR = CCallHelpers::selectScratchGPR(valueGPR);
                         jit.pushToSave(scratchGPR);
+#if USE(JSVALUE64)
                         jit.setCarry(scratchGPR);
+#elif USE(JSVALUE32_64)
+                        UNREACHABLE_FOR_PLATFORM();
+#endif
                         jit.lshift32(CCallHelpers::TrustedImm32(31), scratchGPR);
                         jit.urshift32(CCallHelpers::TrustedImm32(1), valueGPR);
                         jit.or32(scratchGPR, valueGPR);
@@ -212,10 +216,14 @@ CCallHelpers::Jump CheckSpecial::generate(Inst& inst, CCallHelpers& jit, Generat
                         GPRReg valueGPR = args[1].gpr();
                         GPRReg scratchGPR = CCallHelpers::selectScratchGPR(valueGPR);
                         jit.pushToSave(scratchGPR);
+#if USE(JSVALUE64)
                         jit.setCarry(scratchGPR);
                         jit.lshift64(CCallHelpers::TrustedImm32(63), scratchGPR);
                         jit.urshift64(CCallHelpers::TrustedImm32(1), valueGPR);
                         jit.or64(scratchGPR, valueGPR);
+#elif USE(JSVALUE32_64)
+                        UNREACHABLE_FOR_PLATFORM();
+#endif
                         jit.popToRestore(scratchGPR);
                         break;
                     }
