@@ -76,6 +76,9 @@ std::optional<GPRReg> pinnedExtendedOffsetAddrRegister()
     return MacroAssembler::dataTempRegister;
 #elif CPU(X86_64)
     return std::nullopt;
+#elif CPU(ARM)
+    // TODO: More pinned registers, just what I need ...
+    UNREACHABLE_FOR_PLATFORM();
 #else
 #error Unhandled architecture.
 #endif

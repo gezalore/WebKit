@@ -2687,6 +2687,54 @@ private:
     bool m_makeJumpPatchable;
     CachedTempRegister m_cachedDataTempRegister;
     CachedTempRegister m_cachedAddressTempRegister;
+
+    // TODO: MISSING IMPLEMENTATION PLACEHOLDERS BELOW. PUT THESE IN THE PLACE THEY BELONG ONCE IMPLEMENTED.
+public:
+    void addFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void mulFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void andFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void orFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void ceilFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void floorFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void sqrtFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void compareFloat(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    Jump branchFloat(DoubleCondition, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    Jump branchAdd64(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void mul64(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void signExtend32ToPtr(TrustedImm32, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void zeroExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void zeroExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void signExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void signExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void move32ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveFloatTo32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void lea64(Address, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionally32(RelationalCondition, RegisterID, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionally32(RelationalCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionally32(RelationalCondition, RegisterID, TrustedImm32, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyTest32(ResultCondition, RegisterID, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyTest32(ResultCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyTest32(ResultCondition, RegisterID, TrustedImm32, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyDouble(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyDouble(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyFloat(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveConditionallyFloat(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionally32(ResultCondition, RegisterID, RegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionally32(RelationalCondition, RegisterID, RegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionally32(RelationalCondition, RegisterID, TrustedImm32, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyTest32(ResultCondition, RegisterID, RegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyTest32(ResultCondition, RegisterID, TrustedImm32, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyTest32(RelationalCondition, RegisterID, RegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyTest32(RelationalCondition, RegisterID, TrustedImm32, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyDouble(DoubleCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyDouble(RelationalCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyDouble(RelationalCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyFloat(DoubleCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void moveDoubleConditionallyFloat(RelationalCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void loadFence() { UNREACHABLE_FOR_PLATFORM(); }
+    void test32(ResultCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void test32(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void test32(ResultCondition, RegisterID, TrustedImm32, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
 };
 
 } // namespace JSC

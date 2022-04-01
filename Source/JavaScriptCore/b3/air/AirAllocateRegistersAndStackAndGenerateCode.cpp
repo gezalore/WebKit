@@ -150,7 +150,11 @@ static ALWAYS_INLINE CCallHelpers::Address callFrameAddr(CCallHelpers& jit, intp
         return CCallHelpers::Address(GPRInfo::callFrameRegister, offsetFromFP);
     GPRReg reg = *pinnedExtendedOffsetAddrRegister();
     jit.move(CCallHelpers::TrustedImmPtr(offsetFromFP), reg);
+#if USE(JSVALUE64)
     jit.add64(GPRInfo::callFrameRegister, reg);
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM();
+#endif
     return CCallHelpers::Address(reg);
 }
 
@@ -171,7 +175,11 @@ ALWAYS_INLINE void GenerateAndAllocateRegisters::flush(Tmp tmp, Reg reg)
     ASSERT(tmp);
     intptr_t offset = m_map[tmp].spillSlot->offsetFromFP();
     if (tmp.isGP())
+#if USE(JSVALUE64)
         m_jit->store64(reg.gpr(), callFrameAddr(*m_jit, offset));
+#elif USE(JSVALUE32_64)
+        UNREACHABLE_FOR_PLATFORM();
+#endif
     else
         m_jit->storeDouble(reg.fpr(), callFrameAddr(*m_jit, offset));
 }
@@ -200,7 +208,11 @@ ALWAYS_INLINE void GenerateAndAllocateRegisters::alloc(Tmp tmp, Reg reg, bool is
     if (!isDef) {
         intptr_t offset = m_map[tmp].spillSlot->offsetFromFP();
         if (tmp.bank() == GP)
+#if USE(JSVALUE64)
             m_jit->load64(callFrameAddr(*m_jit, offset), reg.gpr());
+#elif USE(JSVALUE32_64)
+            UNREACHABLE_FOR_PLATFORM();
+#endif
         else
             m_jit->loadDouble(callFrameAddr(*m_jit, offset), reg.fpr());
     }
