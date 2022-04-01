@@ -610,7 +610,11 @@ private:
                         GPRReg scratch = params.gpScratch(0);
 
                         jit.move(CCallHelpers::TrustedImmPtr(jumpTable), scratch);
+#if USE(JSVALUE64)
                         jit.load64(CCallHelpers::BaseIndex(scratch, index, CCallHelpers::ScalePtr), scratch);
+#elif USE(JSVALUE32_64)
+                        UNREACHABLE_FOR_PLATFORM();
+#endif
                         jit.farJump(scratch, JSSwitchPtrTag);
 
                         // These labels are guaranteed to be populated before either late paths or
