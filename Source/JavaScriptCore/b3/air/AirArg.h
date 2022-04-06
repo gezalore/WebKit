@@ -503,6 +503,9 @@ public:
 
     static Arg bigImm(int64_t value)
     {
+#if USE(JSVALUE32_64)
+        RELEASE_ASSERT(value >> 32 == 0 || value >> 32 == -1);
+#endif
         Arg result;
         result.m_kind = BigImm;
         result.m_offset = value;
@@ -519,10 +522,15 @@ public:
 
     static Arg bitImm64(int64_t value)
     {
+#if USE(JSVALUE64)
         Arg result;
         result.m_kind = BitImm64;
         result.m_offset = value;
         return result;
+#elif USE(JSVALUE32_64)
+        UNUSED_PARAM(value);
+        RELEASE_ASSERT_NOT_REACHED();
+#endif
     }
 
     static Arg immPtr(const void* address)
@@ -594,13 +602,13 @@ public:
     {
         switch (scale) {
         case 1:
-            if (isX86() || isARM64())
+            if (isX86() || isARM64() || isARM())
                 return true;
             return false;
         case 2:
         case 4:
         case 8:
-            if (isX86())
+            if (isX86() || isARM())
                 return true;
             if (isARM64()) {
                 if (!width)
@@ -1220,6 +1228,8 @@ public:
             return B3::isRepresentableAs<int32_t>(value);
         if (isARM64())
             return isUInt12(value);
+        if (isARM())
+            return isValidARMThumb2Immediate(value);
         return false;
     }
 
@@ -1229,6 +1239,8 @@ public:
             return B3::isRepresentableAs<int32_t>(value);
         if (isARM64())
             return ARM64LogicalImmediate::create32(value).isValid();
+        if (isARM())
+            return isValidARMThumb2Immediate(value);
         return false;
     }
 
@@ -1264,6 +1276,8 @@ public:
                 return isValidScaledUImm12<64>(offset);
             }
         }
+        if (isARM())
+            return MacroAssemblerARMv7::BoundsNonDoubleWordOffset::within(offset);
         return false;
     }
 
@@ -1274,7 +1288,7 @@ public:
             return false;
         if (isX86())
             return true;
-        if (isARM64())
+        if (isARM64() || isARM())
             return !offset;
         return false;
     }
@@ -1407,6 +1421,20 @@ public:
     {
         ASSERT(isBigImm() || isBitImm64());
         return MacroAssembler::TrustedImm64(value());
+    }
+#endif
+
+#if USE(JSVALUE64)
+    MacroAssembler::TrustedImm64 asTrustedBigImm() const
+    {
+        ASSERT(isBigImm());
+        return MacroAssembler::TrustedImm64(value());
+    }
+#elif USE(JSVALUE32_64)
+    MacroAssembler::TrustedImm32 asTrustedBigImm() const
+    {
+        ASSERT(isBigImm());
+        return MacroAssembler::TrustedImm32(value());
     }
 #endif
 
