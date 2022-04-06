@@ -313,4 +313,15 @@ private:
     int m_value;
 };
 
+ALWAYS_INLINE bool isValidARMThumb2Immediate(int64_t value)
+{
+    if (value < 0) return false;
+    if (value > UINT32_MAX) return false;
+    if (value < 256) return true;
+    const int64_t mask = (value ^ (value & (value - 1))) * 0xff;
+    if ((value & mask) == value) return true;
+    // TODO: there are a few more valid forms, see section 4.2 in the Thumb-2 Supplement
+    return false;
+}
+
 } // namespace JSC.

@@ -46,7 +46,7 @@ static void defaultPrologueGenerator(CCallHelpers& jit, Code& code)
 {
     jit.emitFunctionPrologue();
     if (code.frameSize()) {
-        AllowMacroScratchRegisterUsageIf allowScratch(jit, isARM64());
+        AllowMacroScratchRegisterUsageIf allowScratch(jit, isARM64() || isARM());
         jit.addPtr(MacroAssembler::TrustedImm32(-code.frameSize()), MacroAssembler::framePointerRegister,  MacroAssembler::stackPointerRegister);
     }
     
@@ -71,7 +71,11 @@ Code::Code(Procedure& proc)
             RegisterSet all = bank == GP ? RegisterSet::allGPRs() : RegisterSet::allFPRs();
             all.exclude(RegisterSet::stackRegisters());
             all.exclude(RegisterSet::reservedHardwareRegisters());
-            RegisterSet calleeSave = RegisterSet::calleeSaveRegisters();
+#if CPU(ARM)
+            // Our use of DisallowMacroScratchRegisterUsage is not quite right, so for now...
+            all.exclude(RegisterSet::macroScratchRegisters());
+#endif
+            RegisterSet calleeSave = RegisterSet::vmCalleeSaveRegisters();
             all.forEach(
                 [&] (Reg reg) {
                     if (!calleeSave.get(reg))
