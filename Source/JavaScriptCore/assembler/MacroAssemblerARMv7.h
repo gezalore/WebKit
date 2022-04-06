@@ -1751,6 +1751,11 @@ public:
         move(src, dest);
     }
 
+    void signExtend32ToPtr(TrustedImm32 imm, RegisterID dest)
+    {
+        move(imm, dest);
+    }
+
     void zeroExtend32ToWord(RegisterID src, RegisterID dest)
     {
         move(src, dest);
@@ -2745,7 +2750,6 @@ public:
     Jump branchFloat(DoubleCondition, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     Jump branchAdd64(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void mul64(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void signExtend32ToPtr(TrustedImm32, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void zeroExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void zeroExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void signExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }

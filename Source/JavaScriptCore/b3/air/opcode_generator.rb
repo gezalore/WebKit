@@ -579,14 +579,14 @@ def matchForms(outp, speed, forms, columnIndex, columnGetter, filter, callback)
     outp.puts "switch (#{columnGetter[columnIndex]}) {"
     groups.each_pair {
         | key, value |
-        outp.puts "#if USE(JSVALUE64)" if key == "BigImm" or key == "BitImm64"
+        outp.puts "#if USE(JSVALUE64)" if key == "BitImm64"
         Kind.argKinds(key).each {
             | argKind |
             outp.puts "case Arg::#{argKind}:"
         }
         matchForms(outp, speed, value, columnIndex + 1, columnGetter, filter, callback)
         outp.puts "break;"
-        outp.puts "#endif // USE(JSVALUE64)" if key == "BigImm" or key == "BitImm64"
+        outp.puts "#endif // USE(JSVALUE64)" if key == "BitImm64"
     }
     outp.puts "default:"
     outp.puts "break;"
@@ -1233,7 +1233,9 @@ writeH("OpcodeGenerated") {
                     end
                 when "Imm", "BitImm"
                     outp.print "args[#{index}].asTrustedImm32()"
-                when "BigImm", "BitImm64"
+                when "BigImm"
+                    outp.print "args[#{index}].asTrustedBigImm()"
+                when "BitImm64"
                     outp.print "args[#{index}].asTrustedImm64()"
                 when "ZeroReg"
                     outp.print "args[#{index}].asZeroReg()"

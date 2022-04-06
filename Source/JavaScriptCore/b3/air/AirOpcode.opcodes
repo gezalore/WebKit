@@ -39,7 +39,7 @@
 # Argument kinds:
 # Tmp => temporary or register
 # Imm => 32-bit immediate int
-# BigImm => TrustedImm64
+# BigImm => TrustedImm64 on 64-bit targets, TrustedImm32 on 32-bit targets
 # Addr => address as temporary/register+offset
 # Index => BaseIndex address
 # Abs => AbsoluteAddress
