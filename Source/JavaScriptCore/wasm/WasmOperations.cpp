@@ -211,6 +211,8 @@ static void doOSREntry(Instance* instance, Probe::Context& context, BBQCallee& c
     context.gpr(RISCV64Registers::ra) = bitwise_cast<UCPURegister>(*(framePointer + 1));
     context.sp() = framePointer + 2;
     static_assert(prologueStackPointerDelta() == sizeof(void*) * 2);
+#elif CPU(ARM)
+    UNREACHABLE_FOR_PLATFORM();
 #else
 #error Unsupported architecture.
 #endif
