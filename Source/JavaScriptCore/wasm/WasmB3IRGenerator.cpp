@@ -1217,6 +1217,7 @@ auto B3IRGenerator::addGrowMemory(ExpressionType delta, ExpressionType& result) 
 
 auto B3IRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
 {
+#if USE(JSVALUE64)
     static_assert(sizeof(std::declval<Memory*>()->size()) == sizeof(uint64_t), "codegen relies on this size");
 
     Value* memory = m_currentBlock->appendNew<MemoryValue>(m_proc, Load, Int64, origin(), instanceValue(), safeCast<int32_t>(Instance::offsetOfMemory()));
@@ -1229,7 +1230,10 @@ auto B3IRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
         size, m_currentBlock->appendNew<Const32Value>(m_proc, origin(), shiftValue));
 
     result = push(m_currentBlock->appendNew<Value>(m_proc, Trunc, origin(), numPages));
-
+#elif USE(JSVALUE32_64)
+    UNUSED_PARAM(result);
+    UNREACHABLE_FOR_PLATFORM();
+#endif
     return { };
 }
 
@@ -3067,9 +3071,14 @@ auto B3IRGenerator::addCallIndirect(unsigned tableIndex, const TypeDefinition& s
             calleeIndex, constant(pointerType(), sizeof(WasmToWasmImportableFunction)));
         callableFunction = m_currentBlock->appendNew<Value>(m_proc, Add, origin(), callableFunctionBuffer, offset);
 
+#if USE(JSVALUE64)
         // Check that the WasmToWasmImportableFunction is initialized. We trap if it isn't. An "invalid" SignatureIndex indicates it's not initialized.
         // FIXME: when we have trap handlers, we can just let the call fail because Signature::invalidIndex is 0. https://bugs.webkit.org/show_bug.cgi?id=177210
         static_assert(sizeof(WasmToWasmImportableFunction::typeIndex) == sizeof(uint64_t), "Load codegen assumes i64");
+#elif USE(JSVALUE32_64)
+        UNREACHABLE_FOR_PLATFORM();
+#endif
+
         Value* calleeSignatureIndex = m_currentBlock->appendNew<MemoryValue>(m_proc, Load, Int64, origin(), callableFunction, safeCast<int32_t>(WasmToWasmImportableFunction::offsetOfSignatureIndex()));
         {
             CheckValue* check = m_currentBlock->appendNew<CheckValue>(m_proc, Check, origin(),
@@ -3186,9 +3195,13 @@ void B3IRGenerator::dump(const ControlStack& controlStack, const Stack* expressi
 
 auto B3IRGenerator::origin() -> Origin
 {
+#if USE(JSVALUE64)
     OpcodeOrigin origin(m_parser->currentOpcode(), m_parser->currentOpcodeStartingOffset());
     ASSERT(isValidOpType(static_cast<uint8_t>(origin.opcode())));
     return bitwise_cast<Origin>(origin);
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM();
+#endif
 }
 
 static bool shouldDumpIRFor(uint32_t functionIndex)

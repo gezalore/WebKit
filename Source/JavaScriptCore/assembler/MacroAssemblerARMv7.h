@@ -2783,6 +2783,23 @@ public:
     void test32(ResultCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void test32(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void test32(ResultCondition, RegisterID, TrustedImm32, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateFloatToInt32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateFloatToUint32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateFloatToInt64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateFloatToUint64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateFloatToUint64(FPRegisterID, RegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateDoubleToInt64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateDoubleToUint64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void truncateDoubleToUint64(FPRegisterID, RegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void countTrailingZeros32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void countTrailingZeros64(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void convertUInt64ToDouble(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void convertUInt64ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void roundTowardNearestIntDouble(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void roundTowardNearestIntFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void roundTowardZeroFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+
+
 };
 
 } // namespace JSC

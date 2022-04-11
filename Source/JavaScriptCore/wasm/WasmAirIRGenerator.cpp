@@ -1035,7 +1035,11 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
             if (m_catchEntrypoints.size()) {
                 GPRReg scratch = wasmCallingConvention().prologueScratchGPRs[0];
                 jit.loadPtr(CCallHelpers::Address(m_prologueWasmContextGPR, Instance::offsetOfOwner()), scratch);
+#if USE(JSVALUE64)
                 jit.store64(scratch, CCallHelpers::Address(GPRInfo::callFrameRegister, CallFrameSlot::thisArgument * sizeof(Register)));
+#elif USE(JSVALUE32_64)
+                UNREACHABLE_FOR_PLATFORM();
+#endif
             }
         }
     });
@@ -1161,6 +1165,7 @@ void AirIRGenerator::restoreWebAssemblyGlobalState(RestoreCachedStackLimit resto
     restoreWasmContextInstance(block, instance);
 
     if (restoreCachedStackLimit == RestoreCachedStackLimit::Yes) {
+#if USE(JSVALUE64)
         // The Instance caches the stack limit, but also knows where its canonical location is.
         static_assert(sizeof(std::declval<Instance*>()->cachedStackLimit()) == sizeof(uint64_t), "codegen relies on this size");
 
@@ -1170,6 +1175,9 @@ void AirIRGenerator::restoreWebAssemblyGlobalState(RestoreCachedStackLimit resto
         append(block, Move, Arg::addr(instanceValue(), Instance::offsetOfPointerToActualStackLimit()), temp);
         append(block, Move, Arg::addr(temp), temp);
         append(block, Move, temp, Arg::addr(instanceValue(), Instance::offsetOfCachedStackLimit()));
+#elif USE(JSVALUE32_64)
+        UNREACHABLE_FOR_PLATFORM();
+#endif
     }
 
     if (!!memory) {
@@ -1504,6 +1512,7 @@ auto AirIRGenerator::addGrowMemory(ExpressionType delta, ExpressionType& result)
 
 auto AirIRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
 {
+#if USE(JSVALUE64)
     static_assert(sizeof(std::declval<Memory*>()->size()) == sizeof(uint64_t), "codegen relies on this size");
 
     auto temp1 = g64();
@@ -1520,6 +1529,9 @@ auto AirIRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
     append(Move, Arg::imm(16), temp2);
     addShift(Types::I32, Urshift64, temp1, temp2, result);
     append(Move32, result, result);
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM();
+#endif
 
     return { };
 }
@@ -3783,9 +3795,13 @@ auto AirIRGenerator::addCallIndirect(unsigned tableIndex, const TypeDefinition& 
         
         append(Move, Arg::addr(calleeSignatureIndex, WasmToWasmImportableFunction::offsetOfEntrypointLoadLocation()), calleeCode); // Pointer to callee code.
 
+#if USE(JSVALUE64)
         // Check that the WasmToWasmImportableFunction is initialized. We trap if it isn't. An "invalid" SignatureIndex indicates it's not initialized.
         // FIXME: when we have trap handlers, we can just let the call fail because Signature::invalidIndex is 0. https://bugs.webkit.org/show_bug.cgi?id=177210
         static_assert(sizeof(WasmToWasmImportableFunction::typeIndex) == sizeof(uint64_t), "Load codegen assumes i64");
+#elif USE(JSVALUE32_64)
+        UNREACHABLE_FOR_PLATFORM();
+#endif
 
         // FIXME: This seems wasteful to do two checks just for a nicer error message.
         // We should move just to use a single branch and then figure out what
