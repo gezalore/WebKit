@@ -695,8 +695,15 @@
 #endif
 
 /* This controls whether B3 is built. B3 is needed for FTL JIT and WebAssembly */
-#if ENABLE(FTL_JIT) || CPU(ARM)
+#if ENABLE(FTL_JIT)
 #define ENABLE_B3_JIT 1
+#endif
+
+#if ENABLE(WEBASSEMBLY) && CPU(ARM) // Force on. TODO: configure properly
+#undef ENABLE_B3_JIT
+#define ENABLE_B3_JIT 1
+#undef ENABLE_WEBASSEMBLY_B3JIT
+#define ENABLE_WEBASSEMBLY_B3JIT 1
 #endif
 
 #if !defined(ENABLE_WEBASSEMBLY) && (ENABLE(B3_JIT) && PLATFORM(COCOA) && CPU(ADDRESS64))
