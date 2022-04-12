@@ -677,6 +677,11 @@ public:
         m_assembler.mvn(srcDest, srcDest);
     }
 
+    void not32(RegisterID src, RegisterID dest)
+    {
+        m_assembler.mvn(dest, src);
+    }
+
     // Memory access operations:
     //
     // Loads are of the form load(address, destination) and stores of the form
@@ -2798,7 +2803,11 @@ public:
     void roundTowardNearestIntDouble(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void roundTowardNearestIntFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void roundTowardZeroFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-
+    void subFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void divFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void negateFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void rotateRight32(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
+    void absFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
 
 };
 
