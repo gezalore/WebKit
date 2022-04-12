@@ -147,6 +147,9 @@ x86: Add16 U:G:16, UD:G:16
     Imm, Tmp, Tmp
     Tmp, Tmp, Tmp
 
+32: Add64 U:G:32, U:G:32, U:G:32, U:G:32, D:G:32, D:G:32
+    Tmp, Tmp, Tmp, Tmp, Tmp, Tmp
+
 AddDouble U:F:64, U:F:64, D:F:64
     Tmp, Tmp, Tmp
     x86: Addr, Tmp, Tmp

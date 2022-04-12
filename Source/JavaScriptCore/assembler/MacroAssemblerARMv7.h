@@ -298,6 +298,12 @@ public:
         m_assembler.str(scratch, addressTempRegister, ARMThumbImmediate::makeUInt12(4));
     }
 
+    void add64(RegisterID op1Hi, RegisterID op1Lo, RegisterID op2Hi, RegisterID op2Lo, RegisterID destHi, RegisterID destLo)
+    {
+        m_assembler.add_S(destLo, op1Lo, op2Lo);
+        m_assembler.adc(destHi, op1Hi, op2Hi);
+    }
+
     void and16(Address src, RegisterID dest)
     {
         load16(src, dataTempRegister);

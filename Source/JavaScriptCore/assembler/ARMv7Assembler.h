@@ -588,6 +588,7 @@ private:
         OP_EOR_reg_T2   = 0xEA80,
         OP_ADD_reg_T3   = 0xEB00,
         OP_ADD_S_reg_T3 = 0xEB10,
+        OP_ADC_reg_T2   = 0xEB40,
         OP_SUB_reg_T2   = 0xEBA0,
         OP_SUB_S_reg_T2 = 0xEBB0,
         OP_CMP_reg_T2   = 0xEBB0,
@@ -785,6 +786,15 @@ public:
         ASSERT(imm.isEncodedImm());
 
         m_formatter.twoWordOp5i6Imm4Reg4EncodedImm(OP_ADC_imm, rn, rd, imm);
+    }
+
+    void adc(RegisterID rd, RegisterID rn, RegisterID rm, ShiftTypeAndAmount shift = ShiftTypeAndAmount{})
+    {
+        // Rd can only be SP if Rn is also SP.
+        ASSERT(!BadReg(rd));
+        ASSERT(!BadReg(rn));
+        ASSERT(!BadReg(rm));
+        m_formatter.twoWordOp12Reg4FourFours(OP_ADC_reg_T2, rn, FourFours(shift.hi4(), rd, shift.lo4(), rm));
     }
 
     void add(RegisterID rd, RegisterID rn, ARMThumbImmediate imm)
