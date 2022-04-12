@@ -512,6 +512,18 @@ public:
         return result;
     }
 
+#if USE(JSVALUE32_64)
+    static Arg bigImmLo32(int64_t value)
+    {
+        return bigImm(value & 0xffffffff);
+    }
+
+    static Arg bigImmHi32(int64_t value)
+    {
+        return bigImm(value >> 32);
+    }
+#endif
+
     static Arg bitImm(int64_t value)
     {
         Arg result;
