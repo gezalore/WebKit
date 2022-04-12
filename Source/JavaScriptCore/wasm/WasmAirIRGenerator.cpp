@@ -964,7 +964,8 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
     const PinnedRegisterInfo& pinnedRegs = PinnedRegisterInfo::get();
 
     m_memoryBaseGPR = pinnedRegs.baseMemoryPointer;
-    m_code.pinRegister(m_memoryBaseGPR);
+    if (m_memoryBaseGPR != InvalidGPRReg)
+        m_code.pinRegister(m_memoryBaseGPR);
 
     m_wasmContextInstanceGPR = pinnedRegs.wasmContextInstancePointer;
     if (!Context::useFastTLS())
@@ -972,7 +973,8 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
 
     if (mode == MemoryMode::BoundsChecking) {
         m_boundsCheckingSizeGPR = pinnedRegs.boundsCheckingSizeRegister;
-        m_code.pinRegister(m_boundsCheckingSizeGPR);
+        if (m_boundsCheckingSizeGPR != InvalidGPRReg)
+            m_code.pinRegister(m_boundsCheckingSizeGPR);
     }
 
     m_prologueWasmContextGPR = Context::useFastTLS() ? wasmCallingConvention().prologueScratchGPRs[1] : m_wasmContextInstanceGPR;
@@ -1253,16 +1255,23 @@ auto AirIRGenerator::addLocal(Type type, uint32_t count) -> PartialResult
             append(Move, Arg::imm(JSValue::encode(jsNull())), local);
             break;
         case TypeKind::I32:
-        case TypeKind::I64: {
+            append(Xor32, local, local);
+            break;
+        case TypeKind::I64:
             append(Xor64, local, local);
             break;
+        case TypeKind::F32: {
+            auto temp = g32();
+            // IEEE 754 "0" is just int32/64 zero.
+            append(Xor32, temp, temp);
+            append(Move32ToFloat, temp, local);
+            break;
         }
-        case TypeKind::F32:
         case TypeKind::F64: {
             auto temp = g64();
             // IEEE 754 "0" is just int32/64 zero.
             append(Xor64, temp, temp);
-            append(type.isF32() ? Move32ToFloat : Move64ToDouble, temp, local);
+            append(Move64ToDouble, temp, local);
             break;
         }
         default:
@@ -1530,6 +1539,7 @@ auto AirIRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
     addShift(Types::I32, Urshift64, temp1, temp2, result);
     append(Move32, result, result);
 #elif USE(JSVALUE32_64)
+    UNUSED_PARAM(result);
     UNREACHABLE_FOR_PLATFORM();
 #endif
 

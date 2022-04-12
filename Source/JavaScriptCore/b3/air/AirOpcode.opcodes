@@ -177,7 +177,7 @@ Sub32 U:G:32, UZD:G:32
     x86: Tmp, Addr
     x86: Tmp, Index
 
-arm64: Sub32 U:G:32, U:G:32, ZD:G:32
+arm: Sub32 U:G:32, U:G:32, ZD:G:32
     Tmp, Tmp, Tmp
     Tmp, Imm, Tmp
 
@@ -196,7 +196,7 @@ arm64: Sub64 U:G:64, U:G:64, D:G:64
     Tmp, Imm, Tmp
 
 SubDouble U:F:64, U:F:64, D:F:64
-    arm64: Tmp, Tmp, Tmp
+    arm: Tmp, Tmp, Tmp
     x86: Tmp, Addr, Tmp
     x86: Tmp, Index, Tmp
 
@@ -205,7 +205,7 @@ x86: SubDouble U:F:64, UD:F:64
     Addr, Tmp
 
 SubFloat U:F:32, U:F:32, D:F:32
-    arm64: Tmp, Tmp, Tmp
+    arm: Tmp, Tmp, Tmp
     x86: Tmp, Addr, Tmp
     x86: Tmp, Index, Tmp
 
@@ -223,10 +223,10 @@ Neg32 UZD:G:32
     x86: Addr
     x86: Index
 
-arm64: NegateDouble U:F:64, D:F:64
+arm: NegateDouble U:F:64, D:F:64
     Tmp, Tmp
 
-arm64: NegateFloat U:F:32, D:F:32
+arm: NegateFloat U:F:32, D:F:32
     Tmp, Tmp
 
 Mul32 U:G:32, UZD:G:32
@@ -319,14 +319,14 @@ x86: MulFloat U:F:32, UD:F:32
     Tmp, Tmp
     Addr, Tmp
 
-arm64: DivDouble U:F:64, U:F:32, D:F:64
+arm: DivDouble U:F:64, U:F:32, D:F:64
     Tmp, Tmp, Tmp
 
 x86: DivDouble U:F:64, UD:F:64
     Tmp, Tmp
     Addr, Tmp
 
-arm64: DivFloat U:F:32, U:F:32, D:F:32
+arm: DivFloat U:F:32, U:F:32, D:F:32
     Tmp, Tmp, Tmp
 
 x86: DivFloat U:F:32, UD:F:32
@@ -358,7 +358,7 @@ Lea32 UA:G:32, D:G:32
     Addr, Tmp
     x86: Index, Tmp as x86Lea32
 
-Lea64 UA:G:64, D:G:64
+64: Lea64 UA:G:64, D:G:64
     Addr, Tmp
     x86: Index, Tmp as x86Lea64
 
@@ -428,7 +428,7 @@ x86: XorFloat U:F:32, U:F:32, D:F:32
 x86: XorFloat U:F:32, UD:F:32
     Tmp, Tmp
 
-arm64: Lshift32 U:G:32, U:G:32, ZD:G:32
+arm: Lshift32 U:G:32, U:G:32, ZD:G:32
     Tmp, Tmp, Tmp
     Tmp, Imm, Tmp
 
@@ -444,7 +444,7 @@ x86_64: Lshift64 U:G:64, UD:G:64
     Tmp*, Tmp
     Imm, Tmp
 
-arm64: Rshift32 U:G:32, U:G:32, ZD:G:32
+arm: Rshift32 U:G:32, U:G:32, ZD:G:32
     Tmp, Tmp, Tmp
     Tmp, Imm, Tmp
 
@@ -460,7 +460,7 @@ x86_64: Rshift64 U:G:64, UD:G:64
     Tmp*, Tmp
     Imm, Tmp
 
-arm64: Urshift32 U:G:32, U:G:32, ZD:G:32
+arm: Urshift32 U:G:32, U:G:32, ZD:G:32
     Tmp, Tmp, Tmp
     Tmp, Imm, Tmp
 
@@ -480,7 +480,7 @@ x86_64: RotateRight32 U:G:32, UZD:G:32
     Tmp*, Tmp
     Imm, Tmp
 
-arm64: RotateRight32 U:G:32, U:G:32, ZD:G:32
+arm: RotateRight32 U:G:32, U:G:32, ZD:G:32
     Tmp, Tmp, Tmp
     Tmp, Imm, Tmp
 
@@ -560,7 +560,7 @@ Xor32 U:G:32, UZD:G:32
     x86: Imm, Index
     x86: Imm, Tmp
 
-arm64: Not32 U:G:32, ZD:G:32
+arm: Not32 U:G:32, ZD:G:32
     Tmp, Tmp
 
 x86: Not32 UZD:G:32
@@ -576,10 +576,10 @@ x86_64: Not64 UD:G:64
     Addr
     Index
 
-arm64: AbsDouble U:F:64, D:F:64
+arm: AbsDouble U:F:64, D:F:64
     Tmp, Tmp
 
-arm64: AbsFloat U:F:32, D:F:32
+arm: AbsFloat U:F:32, D:F:32
     Tmp, Tmp
 
 CeilDouble U:F:64, D:F:64
@@ -768,7 +768,7 @@ Load8 U:G:8, ZD:G:32
     Addr, Tmp
     Index, Tmp
 
-arm: LoadAcq8 U:G:8, ZD:G:32 /effects
+arm64: LoadAcq8 U:G:8, ZD:G:32 /effects
     SimpleAddr, Tmp
 
 Store8 U:G:8, D:G:8
@@ -777,28 +777,28 @@ Store8 U:G:8, D:G:8
     x86: Imm, Index
     x86: Imm, Addr
 
-arm: StoreRel8 U:G:8, D:G:8 /effects
+arm64: StoreRel8 U:G:8, D:G:8 /effects
     Tmp, SimpleAddr
 
 Load8SignedExtendTo32 U:G:8, ZD:G:32
     Addr, Tmp
     Index, Tmp
 
-arm: LoadAcq8SignedExtendTo32 U:G:8, ZD:G:32 /effects
+arm64: LoadAcq8SignedExtendTo32 U:G:8, ZD:G:32 /effects
     SimpleAddr, Tmp
 
 Load16 U:G:16, ZD:G:32
     Addr, Tmp
     Index, Tmp
 
-arm: LoadAcq16 U:G:16, ZD:G:32 /effects
+arm64: LoadAcq16 U:G:16, ZD:G:32 /effects
     SimpleAddr, Tmp
 
 Load16SignedExtendTo32 U:G:16, ZD:G:32
     Addr, Tmp
     Index, Tmp
 
-arm: LoadAcq16SignedExtendTo32 U:G:16, ZD:G:32 /effects
+arm64: LoadAcq16SignedExtendTo32 U:G:16, ZD:G:32 /effects
     SimpleAddr, Tmp
 
 Store16 U:G:16, D:G:16
@@ -807,13 +807,13 @@ Store16 U:G:16, D:G:16
     x86: Imm, Index
     x86: Imm, Addr
 
-arm: StoreRel16 U:G:16, D:G:16 /effects
+arm64: StoreRel16 U:G:16, D:G:16 /effects
     Tmp, SimpleAddr
 
-arm: LoadAcq32 U:G:32, ZD:G:32 /effects
+arm64: LoadAcq32 U:G:32, ZD:G:32 /effects
     SimpleAddr, Tmp
 
-arm: StoreRel32 U:G:32, ZD:G:32 /effects
+arm64: StoreRel32 U:G:32, ZD:G:32 /effects
     Tmp, SimpleAddr
 
 arm64: LoadAcq64 U:G:64, ZD:G:64 /effects
