@@ -84,23 +84,46 @@ struct ConstrainedTmp {
 };
 
 class TypedTmp {
+
+    bool isHandledAsGPPair() const {
+#if USE(JSVALUE64)
+        return false;
+#elif USE(JSVALUE32_64)
+        return type() == Types::I64;
+#endif
+    }
+
 public:
     constexpr TypedTmp()
-        : m_tmp()
-        , m_type(Types::Void)
+        : m_type(Types::Void)
     {
     }
 
     TypedTmp(Tmp tmp, Type type)
         : m_tmp(tmp)
         , m_type(type)
-    { }
+    {
+        ASSERT(!isHandledAsGPPair());
+    }
+
+#if USE(JSVALUE32_64)
+    TypedTmp(Tmp tmpLo, Tmp tmpHi, Type type)
+        : m_tmp(tmpLo)
+        , m_tmpHi(tmpHi)
+        , m_type(type)
+    {
+        ASSERT(!!tmpLo);
+        ASSERT(!!tmpHi);
+        ASSERT(isHandledAsGPPair());
+    }
+#endif
 
     TypedTmp(const TypedTmp&) = default;
     TypedTmp(TypedTmp&&) = default;
     TypedTmp& operator=(TypedTmp&&) = default;
     TypedTmp& operator=(const TypedTmp&) = default;
 
+#if USE(JSVALUE64)
     bool operator==(const TypedTmp& other) const
     {
         return m_tmp == other.m_tmp && m_type == other.m_type;
@@ -109,22 +132,56 @@ public:
     {
         return !(*this == other);
     }
+#endif
+
+    operator Tmp() const
+    {
+        ASSERT(!isHandledAsGPPair());
+        return tmp();
+    }
+
+    operator Arg() const
+    {
+        ASSERT(!isHandledAsGPPair());
+        return Arg(tmp());
+    }
 
     explicit operator bool() const { return !!tmp(); }
 
-    operator Tmp() const { return tmp(); }
-    operator Arg() const { return Arg(tmp()); }
-    Tmp tmp() const { return m_tmp; }
+    Tmp tmp() const
+    {
+#if USE(JSVALUE32_64)
+//        ASSERT(!m_tmpHi);
+#endif
+        return m_tmp;
+    }
+#if USE(JSVALUE32_64)
+    Tmp lo() const { return tmp(); }
+    Tmp hi() const
+    {
+        ASSERT(!!m_tmpHi);
+        return m_tmpHi;
+    }
+#endif
     Type type() const { return m_type; }
 
     void dump(PrintStream& out) const
     {
+#if USE(JSVALUE32_64)
+        if (isHandledAsGPPair()) {
+            out.print("(", m_tmpHi, "/", m_tmp, ", ", m_type.kind, ", ", m_type.index, ")");
+            return;
+        }
+#endif
         out.print("(", m_tmp, ", ", m_type.kind, ", ", m_type.index, ")");
     }
 
 private:
 
-    Tmp m_tmp;
+    Tmp m_tmp { };
+#if USE(JSVALUE32_64)
+    Tmp m_tmpHi { }; // More significant 32-bits of I64 value
+#endif
     Type m_type;
 };
 
@@ -510,7 +567,11 @@ private:
     }
 
     TypedTmp g32() { return { newTmp(B3::GP), Types::I32 }; }
+#if USE(JSVALUE64)
     TypedTmp g64() { return { newTmp(B3::GP), Types::I64 }; }
+#elif USE(JSVALUE32_64)
+    TypedTmp g64() { return { newTmp(B3::GP), newTmp(B3::GP), Types::I64 }; }
+#endif
     TypedTmp gExternref() { return { newTmp(B3::GP), Types::Externref }; }
     TypedTmp gFuncref() { return { newTmp(B3::GP), Types::Funcref }; }
     TypedTmp gRef(Type type) { return { newTmp(B3::GP), type }; }
@@ -1051,7 +1112,7 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
         // FIXME: Would be nice to only do this if we use instance value.
         append(Move, Tmp(m_prologueWasmContextGPR), m_instanceValue);
     } else
-        m_instanceValue = { Tmp(m_prologueWasmContextGPR), Types::I64 };
+        m_instanceValue = { Tmp(m_prologueWasmContextGPR), is64Bit() ? Types::I64 : Types::I32 };
 
     append(EntrySwitch);
     m_mainEntrypointStart = m_code.addBlock();
@@ -1258,7 +1319,12 @@ auto AirIRGenerator::addLocal(Type type, uint32_t count) -> PartialResult
             append(Xor32, local, local);
             break;
         case TypeKind::I64:
+#if USE(JSVALUE64)
             append(Xor64, local, local);
+#elif USE(JSVALUE32_64)
+            append(Xor32, local.lo(), local.lo());
+            append(Xor32, local.hi(), local.hi());
+#endif
             break;
         case TypeKind::F32: {
             auto temp = g32();
@@ -1301,16 +1367,14 @@ auto AirIRGenerator::addConstant(BasicBlock* block, Type type, uint64_t value) -
         break;
     }
     case TypeKind::F64: {
-#if USE(JSVALUE64)
         auto tmp = g64();
+#if USE(JSVALUE64)
         append(block, Move, Arg::bigImm(value), tmp);
         append(block, Move64ToDouble, tmp, result);
 #elif USE(JSVALUE32_64)
-        auto tmpLo = g32();
-        auto tmpHi = g32();
-        append(block, Move, Arg::bigImmLo32(value), tmpLo);
-        append(block, Move, Arg::bigImmHi32(value), tmpHi);
-        append(block, Move64ToDouble, tmpHi, tmpLo, result);
+        append(block, Move, Arg::bigImmLo32(value), tmp.lo());
+        append(block, Move, Arg::bigImmHi32(value), tmp.hi());
+        append(block, Move64ToDouble, tmp.hi(), tmp.lo(), result);
 #endif
         break;
     }
@@ -5591,7 +5655,11 @@ template<> auto AirIRGenerator::addOp<OpType::I64LeS>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::I64Add>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g64();
+#if USE(JSVALU64)
     append(Add64, arg0, arg1, result);
+#elif USE(JSVALUE32_64)
+    append(Add64, arg0.hi(), arg0.lo(), arg1.hi(), arg1.lo(), result.hi(), result.lo());
+#endif
     return { };
 }
 
