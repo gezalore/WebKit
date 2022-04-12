@@ -1976,6 +1976,11 @@ public:
         m_formatter.vfpOp(OP_VORR_T1, OP_VORR_T1b, true, rn, rd, rm);
     }
 
+    void vadd(FPSingleRegisterID rd, FPSingleRegisterID rn, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VADD_T2, OP_VADD_T2b, false, rn, rd, rm);
+    }
+
     void vadd(FPDoubleRegisterID rd, FPDoubleRegisterID rn, FPDoubleRegisterID rm)
     {
         m_formatter.vfpOp(OP_VADD_T2, OP_VADD_T2b, true, rn, rd, rm);
@@ -2007,6 +2012,11 @@ public:
     {
         // boolean values are 64bit (toInt, unsigned, roundZero)
         m_formatter.vfpOp(OP_VCVT_FPIVFP, OP_VCVT_FPIVFPb, true, vcvtOp(true, true, true), rd, rm);
+    }
+
+    void vdiv(FPSingleRegisterID rd, FPSingleRegisterID rn, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VDIV, OP_VDIVb, false, rn, rd, rm);
     }
 
     void vdiv(FPDoubleRegisterID rd, FPDoubleRegisterID rn, FPDoubleRegisterID rm)
@@ -2061,6 +2071,11 @@ public:
         m_formatter.vfpOp(OP_VMRS, OP_VMRSb, false, VFPOperand(1), VFPOperand(0x10 | reg), VFPOperand(0));
     }
 
+    void vmul(FPSingleRegisterID rd, FPSingleRegisterID rn, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VMUL_T2, OP_VMUL_T2b, false, rn, rd, rm);
+    }
+
     void vmul(FPDoubleRegisterID rd, FPDoubleRegisterID rn, FPDoubleRegisterID rm)
     {
         m_formatter.vfpOp(OP_VMUL_T2, OP_VMUL_T2b, true, rn, rd, rm);
@@ -2076,9 +2091,19 @@ public:
         m_formatter.vfpMemOp(OP_FSTS, OP_FSTSb, false, rn, rd, imm);
     }
 
+    void vsub(FPSingleRegisterID rd, FPSingleRegisterID rn, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VSUB_T2, OP_VSUB_T2b, false, rn, rd, rm);
+    }
+
     void vsub(FPDoubleRegisterID rd, FPDoubleRegisterID rn, FPDoubleRegisterID rm)
     {
         m_formatter.vfpOp(OP_VSUB_T2, OP_VSUB_T2b, true, rn, rd, rm);
+    }
+
+    void vabs(FPSingleRegisterID rd, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VABS_T2, OP_VABS_T2b, false, VFPOperand(16), rd, rm);
     }
 
     void vabs(FPDoubleRegisterID rd, FPDoubleRegisterID rm)
@@ -2086,9 +2111,19 @@ public:
         m_formatter.vfpOp(OP_VABS_T2, OP_VABS_T2b, true, VFPOperand(16), rd, rm);
     }
 
+    void vneg(FPSingleRegisterID rd, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VNEG_T2, OP_VNEG_T2b, false, VFPOperand(1), rd, rm);
+    }
+
     void vneg(FPDoubleRegisterID rd, FPDoubleRegisterID rm)
     {
         m_formatter.vfpOp(OP_VNEG_T2, OP_VNEG_T2b, true, VFPOperand(1), rd, rm);
+    }
+
+    void vsqrt(FPSingleRegisterID rd, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VSQRT_T1, OP_VSQRT_T1b, false, VFPOperand(17), rd, rm);
     }
 
     void vsqrt(FPDoubleRegisterID rd, FPDoubleRegisterID rm)

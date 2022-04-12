@@ -1207,6 +1207,16 @@ public:
         m_assembler.vmov(dest, src1, src2);
     }
 
+    void move32ToFloat(RegisterID src, FPRegisterID dest)
+    {
+        m_assembler.vmov(asSingle(dest), src);
+    }
+
+    void moveFloatTo32(FPRegisterID src, RegisterID dest)
+    {
+        m_assembler.vmov(dest, asSingle(src));
+    }
+
     static bool shouldBlindForSpecificArch(uint32_t value)
     {
         ARMThumbImmediate immediate = ARMThumbImmediate::makeEncodedImm(value);
@@ -1361,7 +1371,12 @@ public:
         cachedAddressTempRegister().invalidate();
         storeFloat(src, Address(addressTempRegister, address.offset));
     }
-    
+
+    void addFloat(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
+    {
+        m_assembler.vadd(asSingle(dest), asSingle(op1), asSingle(op2));
+    }
+
     void addDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.vadd(dest, dest, src);
@@ -1384,6 +1399,11 @@ public:
         m_assembler.vadd(dest, dest, fpTempRegister);
     }
 
+    void divFloat(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
+    {
+        m_assembler.vdiv(asSingle(dest), asSingle(op1), asSingle(op2));
+    }
+
     void divDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.vdiv(dest, dest, src);
@@ -1392,6 +1412,11 @@ public:
     void divDouble(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
     {
         m_assembler.vdiv(dest, op1, op2);
+    }
+
+    void subFloat(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
+    {
+        m_assembler.vsub(asSingle(dest), asSingle(op1), asSingle(op2));
     }
 
     void subDouble(FPRegisterID src, FPRegisterID dest)
@@ -1408,6 +1433,11 @@ public:
     void subDouble(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
     {
         m_assembler.vsub(dest, op1, op2);
+    }
+
+    void mulFloat(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
+    {
+        m_assembler.vmul(asSingle(dest), asSingle(op1), asSingle(op2));
     }
 
     void mulDouble(FPRegisterID src, FPRegisterID dest)
@@ -1436,19 +1466,46 @@ public:
         m_assembler.vorr(dest, op1, op2);
     }
 
+    void sqrtFloat(FPRegisterID src, FPRegisterID dest)
+    {
+        m_assembler.vsqrt(asSingle(dest), asSingle(src));
+    }
+
     void sqrtDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.vsqrt(dest, src);
     }
-    
+
+    void absFloat(FPRegisterID src, FPRegisterID dest)
+    {
+        m_assembler.vabs(asSingle(dest), asSingle(src));
+    }
+
     void absDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.vabs(dest, src);
     }
 
+    void negateFloat(FPRegisterID src, FPRegisterID dest)
+    {
+        m_assembler.vneg(asSingle(dest), asSingle(src));
+    }
+
     void negateDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.vneg(dest, src);
+    }
+
+    NO_RETURN_DUE_TO_CRASH void ceilFloat(FPRegisterID, FPRegisterID)
+    {
+        ASSERT(!supportsFloatingPointRounding());
+        CRASH();
+    }
+
+    NO_RETURN_DUE_TO_CRASH void floorFloat(FPRegisterID, FPRegisterID)
+    {
+        ASSERT(!supportsFloatingPointRounding());
+        CRASH();
     }
 
     NO_RETURN_DUE_TO_CRASH void ceilDouble(FPRegisterID, FPRegisterID)
@@ -2744,13 +2801,8 @@ private:
 
     // TODO: MISSING IMPLEMENTATION PLACEHOLDERS BELOW. PUT THESE IN THE PLACE THEY BELONG ONCE IMPLEMENTED.
 public:
-    void addFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void mulFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void andFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void orFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void ceilFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void floorFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void sqrtFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void compareFloat(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     Jump branchFloat(DoubleCondition, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     Jump branchAdd64(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
@@ -2759,9 +2811,6 @@ public:
     void zeroExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void signExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void signExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void move32ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void moveFloatTo32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void lea64(Address, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveConditionally32(RelationalCondition, RegisterID, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveConditionally32(RelationalCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveConditionally32(RelationalCondition, RegisterID, TrustedImm32, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
@@ -2803,11 +2852,7 @@ public:
     void roundTowardNearestIntDouble(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void roundTowardNearestIntFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void roundTowardZeroFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void subFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void divFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void negateFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void rotateRight32(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void absFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
 
 };
 
