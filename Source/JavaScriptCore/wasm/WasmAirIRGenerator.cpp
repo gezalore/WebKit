@@ -1267,13 +1267,9 @@ auto AirIRGenerator::addLocal(Type type, uint32_t count) -> PartialResult
             append(Move32ToFloat, temp, local);
             break;
         }
-        case TypeKind::F64: {
-            auto temp = g64();
-            // IEEE 754 "0" is just int32/64 zero.
-            append(Xor64, temp, temp);
-            append(Move64ToDouble, temp, local);
+        case TypeKind::F64:
+            append(MoveZeroToDouble, local);
             break;
-        }
         default:
             RELEASE_ASSERT_NOT_REACHED();
         }
@@ -1298,11 +1294,24 @@ auto AirIRGenerator::addConstant(BasicBlock* block, Type type, uint64_t value) -
     case TypeKind::RefNull:
         append(block, Move, Arg::bigImm(value), result);
         break;
-    case TypeKind::F32:
+    case TypeKind::F32: {
+        auto tmp = g32();
+        append(block, Move, Arg::bigImm(value), tmp);
+        append(block, Move32ToFloat, tmp, result);
+        break;
+    }
     case TypeKind::F64: {
+#if USE(JSVALUE64)
         auto tmp = g64();
         append(block, Move, Arg::bigImm(value), tmp);
-        append(block, type.isF32() ? Move32ToFloat : Move64ToDouble, tmp, result);
+        append(block, Move64ToDouble, tmp, result);
+#elif USE(JSVALUE32_64)
+        auto tmpLo = g32();
+        auto tmpHi = g32();
+        append(block, Move, Arg::bigImmLo32(value), tmpLo);
+        append(block, Move, Arg::bigImmHi32(value), tmpHi);
+        append(block, Move64ToDouble, tmpHi, tmpLo, result);
+#endif
         break;
     }
 

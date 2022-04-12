@@ -1217,6 +1217,11 @@ public:
         m_assembler.vmov(dest, asSingle(src));
     }
 
+    void move64ToDouble(RegisterID srcHi, RegisterID srcLo, FPRegisterID dest)
+    {
+        m_assembler.vmov(dest, srcLo, srcHi);
+    }
+
     static bool shouldBlindForSpecificArch(uint32_t value)
     {
         ARMThumbImmediate immediate = ARMThumbImmediate::makeEncodedImm(value);
@@ -1297,11 +1302,6 @@ public:
     {
         if (src != dest)
             m_assembler.vmov(dest, src);
-    }
-
-    void moveDouble(FPRegisterID src, RegisterID dest)
-    {
-        m_assembler.vmov(dest, RegisterID(dest + 1), src);
     }
 
     void moveZeroToDouble(FPRegisterID reg)
