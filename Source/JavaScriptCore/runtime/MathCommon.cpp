@@ -611,5 +611,16 @@ JSC_DEFINE_JIT_OPERATION(jsRoundDouble, double, (double value))
     return roundDoubleImpl(value);
 }
 
+static ALWAYS_INLINE float roundFloatImpl(float value)
+{
+    float integer = ceil(value);
+    return integer - (integer - 0.5 > value);
+}
+
+JSC_DEFINE_JIT_OPERATION(roundFloat, float, (float value))
+{
+    return roundFloatImpl(value);
+}
+
 } // namespace Math
 } // namespace JSC

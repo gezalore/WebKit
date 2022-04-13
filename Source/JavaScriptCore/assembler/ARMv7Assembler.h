@@ -1996,6 +1996,11 @@ public:
         m_formatter.vfpOp(OP_VADD_T2, OP_VADD_T2b, true, rn, rd, rm);
     }
 
+    void vcmp(FPSingleRegisterID rd, FPSingleRegisterID rm)
+    {
+        m_formatter.vfpOp(OP_VCMP, OP_VCMPb, false, VFPOperand(4), rd, rm);
+    }
+
     void vcmp(FPDoubleRegisterID rd, FPDoubleRegisterID rm)
     {
         m_formatter.vfpOp(OP_VCMP, OP_VCMPb, true, VFPOperand(4), rd, rm);
