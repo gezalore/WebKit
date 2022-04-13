@@ -151,15 +151,19 @@ public:
     Tmp tmp() const
     {
 #if USE(JSVALUE32_64)
-//        ASSERT(!m_tmpHi);
+        ASSERT(!m_tmpHi);
 #endif
+        ASSERT(m_tmp);
         return m_tmp;
     }
 #if USE(JSVALUE32_64)
-    Tmp lo() const { return tmp(); }
+    Tmp lo() const {
+        ASSERT(m_tmp);
+        return m_tmp;
+     }
     Tmp hi() const
     {
-        ASSERT(!!m_tmpHi);
+        ASSERT(m_tmpHi);
         return m_tmpHi;
     }
 #endif
@@ -569,8 +573,10 @@ private:
     TypedTmp g32() { return { newTmp(B3::GP), Types::I32 }; }
 #if USE(JSVALUE64)
     TypedTmp g64() { return { newTmp(B3::GP), Types::I64 }; }
+    TypedTmp gPtr() { return g64(); }
 #elif USE(JSVALUE32_64)
     TypedTmp g64() { return { newTmp(B3::GP), newTmp(B3::GP), Types::I64 }; }
+    TypedTmp gPtr() { return g32(); }
 #endif
     TypedTmp gExternref() { return { newTmp(B3::GP), Types::Externref }; }
     TypedTmp gFuncref() { return { newTmp(B3::GP), Types::Funcref }; }
@@ -804,7 +810,7 @@ private:
 
         Inst inst(CCall, origin);
 
-        Tmp callee = g64();
+        Tmp callee = gPtr();
         append(block, Move, Arg::immPtr(tagCFunctionPtr<void*, OperationPtrTag>(func)), callee);
         inst.args.append(callee);
 
@@ -1353,12 +1359,19 @@ auto AirIRGenerator::addConstant(BasicBlock* block, Type type, uint64_t value) -
     auto result = tmpForType(type);
     switch (type.kind) {
     case TypeKind::I32:
-    case TypeKind::I64:
     case TypeKind::Externref:
     case TypeKind::Funcref:
     case TypeKind::Ref:
     case TypeKind::RefNull:
         append(block, Move, Arg::bigImm(value), result);
+        break;
+    case TypeKind::I64:
+#if USE(JSVALUE64)
+        append(block, Move, Arg::bigImm(value), result);
+#elif USE(JSVALUE32_64)
+        append(block, Move, Arg::bigImmLo32(value), result.lo());
+        append(block, Move, Arg::bigImmHi32(value), result.hi());
+#endif
         break;
     case TypeKind::F32: {
         auto tmp = g32();
@@ -3538,9 +3551,18 @@ auto AirIRGenerator::addReturn(const ControlData& data, const Stack& returnValue
         }
 
         ASSERT(rep.isReg());
+#if USE(JSVALUE64)
         if (data.signature()->as<FunctionSignature>()->returnType(i).isI32())
             append(Move32, tmp, tmp);
         returnConstraints.append(ConstrainedTmp(tmp, wasmCallInfo.results[i]));
+#elif USE(JSVALUE32_64)
+        if (data.signature()->as<FunctionSignature>()->returnType(i).isI64()) {
+            JSValueRegs jsr = wasmCallInfo.results[i].jsr();
+            returnConstraints.append(ConstrainedTmp(tmp.lo(), B3::ValueRep { jsr.payloadGPR() }));
+            returnConstraints.append(ConstrainedTmp(tmp.hi(), B3::ValueRep { jsr.tagGPR() }));
+        } else
+            returnConstraints.append(ConstrainedTmp(tmp, wasmCallInfo.results[i]));
+#endif
     }
 
     emitPatchpoint(m_currentBlock, patch, ResultList { }, WTFMove(returnConstraints));
@@ -4026,6 +4048,14 @@ auto AirIRGenerator::emitIndirectCall(TypedTmp calleeInstance, ExpressionType ca
 void AirIRGenerator::unify(const ExpressionType dst, const ExpressionType source)
 {
     ASSERT(isSubtype(source.type(), dst.type()));
+#if USE(JSVALUE32_64)
+    if (source.type().isI64()) {
+        ASSERT(dst.type().isI64());
+        append(Move, source.lo(), dst.lo());
+        append(Move, source.hi(), dst.hi());
+        return;
+    }
+#endif
     append(moveOpForValueType(dst.type()), source, dst);
 }
 
@@ -4446,52 +4476,68 @@ auto AirIRGenerator::addOp<OpType::F32ConvertUI64>(ExpressionType arg, Expressio
 template<>
 auto AirIRGenerator::addOp<OpType::F64Nearest>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
-    auto* patchpoint = addPatchpoint(B3::Double);
-    patchpoint->effects = B3::Effects::none();
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
-        jit.roundTowardNearestIntDouble(params[1].fpr(), params[0].fpr());
-    });
     result = f64();
-    emitPatchpoint(patchpoint, result, arg);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        auto *patchpoint = addPatchpoint(B3::Double);
+        patchpoint->effects = B3::Effects::none();
+        patchpoint->setGenerator([=](CCallHelpers &jit, const B3::StackmapGenerationParams &params) {
+            jit.roundTowardNearestIntDouble(params[1].fpr(), params[0].fpr());
+        });
+        emitPatchpoint(patchpoint, result, arg);
+        return { };
+    }
+    emitCCall(&Math::roundDouble, result, arg);
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::F32Nearest>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
-    auto* patchpoint = addPatchpoint(B3::Float);
-    patchpoint->effects = B3::Effects::none();
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
-        jit.roundTowardNearestIntFloat(params[1].fpr(), params[0].fpr());
-    });
     result = f32();
-    emitPatchpoint(patchpoint, result, arg);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        auto* patchpoint = addPatchpoint(B3::Float);
+        patchpoint->effects = B3::Effects::none();
+        patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+            jit.roundTowardNearestIntFloat(params[1].fpr(), params[0].fpr());
+        });
+        emitPatchpoint(patchpoint, result, arg);
+        return { };
+    }
+    emitCCall(&Math::roundFloat, result, arg);
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::F64Trunc>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
-    auto* patchpoint = addPatchpoint(B3::Double);
-    patchpoint->effects = B3::Effects::none();
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
-        jit.roundTowardZeroDouble(params[1].fpr(), params[0].fpr());
-    });
     result = f64();
-    emitPatchpoint(patchpoint, result, arg);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        auto* patchpoint = addPatchpoint(B3::Double);
+        patchpoint->effects = B3::Effects::none();
+        patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+            jit.roundTowardZeroDouble(params[1].fpr(), params[0].fpr());
+        });
+        emitPatchpoint(patchpoint, result, arg);
+        return { };
+    }
+    emitCCall(&Math::truncDouble, result, arg);
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::F32Trunc>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
-    auto* patchpoint = addPatchpoint(B3::Float);
-    patchpoint->effects = B3::Effects::none();
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
-        jit.roundTowardZeroFloat(params[1].fpr(), params[0].fpr());
-    });
     result = f32();
-    emitPatchpoint(patchpoint, result, arg);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        auto* patchpoint = addPatchpoint(B3::Float);
+        patchpoint->effects = B3::Effects::none();
+        patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+            jit.roundTowardZeroFloat(params[1].fpr(), params[0].fpr());
+        });
+        emitPatchpoint(patchpoint, result, arg);
+        return { };
+    }
+    emitCCall(&Math::truncFloat, result, arg);
     return { };
 }
 
@@ -4852,7 +4898,11 @@ auto AirIRGenerator::addFloatingPointBinOp(Type type, B3::Air::Opcode op, Expres
 template<> auto AirIRGenerator::addOp<OpType::F32Ceil>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f32();
-    append(CeilFloat, arg0, result);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        append(CeilFloat, arg0, result);
+        return { };
+    }
+    emitCCall(&Math::ceilFloat, result, arg0);
     return { };
 }
 
@@ -5005,7 +5055,7 @@ template<> auto AirIRGenerator::addOp<OpType::F32Copysign>(ExpressionType arg0, 
     append(Move, Arg::bigImm(0x80000000), sign);
     append(And32, temp1, sign, sign);
 
-    append(MoveDoubleTo64, arg0, temp1);
+    append(MoveFloatTo32, arg0, temp1);
     append(Move, Arg::bigImm(0x7fffffff), value);
     append(And32, temp1, value, value);
 
@@ -5192,6 +5242,7 @@ template<> auto AirIRGenerator::addOp<OpType::F64Copysign>(ExpressionType arg0, 
     // FIXME: We can have better codegen here for the imms and two operand forms on x86
     // https://bugs.webkit.org/show_bug.cgi?id=193999
     result = f64();
+#if USE(JSVALUE64)
     auto temp1 = g64();
     auto sign = g64();
     auto value = g64();
@@ -5206,6 +5257,23 @@ template<> auto AirIRGenerator::addOp<OpType::F64Copysign>(ExpressionType arg0, 
 
     append(Or64, sign, value, value);
     append(Move64ToDouble, value, result);
+#elif USE(JSVALUE32_64)
+    auto tempA = g32();
+    auto tempB = g32();
+    auto sign = g32();
+    auto value = g64();
+
+    append(MoveDoubleHiTo32, arg1, sign);
+    append(Move, Arg::bigImm(0x80000000), tempA);
+    append(And32, tempA, sign, sign);
+
+    append(MoveDoubleTo64, arg0, value.hi(), value.lo());
+    append(Move, Arg::bigImm(0x7fffffff), tempB);
+    append(And32, tempB, value.hi(), value.hi());
+
+    append(Or32, sign, value.hi(), value.hi());
+    append(Move64ToDouble, value.hi(), value.lo(), result);
+#endif
 
     return { };
 }
@@ -5293,7 +5361,11 @@ template<> auto AirIRGenerator::addOp<OpType::I32GeU>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::F64Ceil>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f64();
-    append(CeilDouble, arg0, result);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        append(CeilDouble, arg0, result);
+        return { };
+    }
+    emitCCall(&Math::ceilDouble, result, arg0);
     return { };
 }
 
@@ -5312,7 +5384,11 @@ template<> auto AirIRGenerator::addOp<OpType::I32Shl>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::F64Floor>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f64();
-    append(FloorDouble, arg0, result);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        append(FloorDouble, arg0, result);
+        return { };
+    }
+    emitCCall(&Math::floorDouble, result, arg0);
     return { };
 }
 
@@ -5481,7 +5557,11 @@ template<> auto AirIRGenerator::addOp<OpType::I64Eq>(ExpressionType arg0, Expres
 template<> auto AirIRGenerator::addOp<OpType::F32Floor>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f32();
-    append(FloorFloat, arg0, result);
+    if (MacroAssembler::supportsFloatingPointRounding()) {
+        append(FloorFloat, arg0, result);
+        return { };
+    }
+    emitCCall(&Math::floorFloat, result, arg0);
     return { };
 }
 

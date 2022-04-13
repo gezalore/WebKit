@@ -1228,6 +1228,21 @@ public:
         m_assembler.vmov(dest, srcLo, srcHi);
     }
 
+    void moveDoubleTo64(FPRegisterID src, RegisterID destHi, RegisterID destLo)
+    {
+        m_assembler.vmov(destLo, destHi, src);
+    }
+
+//    void move32ToDoubleHi(RegisterID src, FPRegisterID dest)
+//    {
+//        m_assembler.vmov(asSingleUpper(dest), src);
+//    }
+
+    void moveDoubleHiTo32(FPRegisterID src, RegisterID dest)
+    {
+        m_assembler.vmov(dest, asSingleUpper(src));
+    }
+
     static bool shouldBlindForSpecificArch(uint32_t value)
     {
         ARMThumbImmediate immediate = ARMThumbImmediate::makeEncodedImm(value);
@@ -1462,9 +1477,19 @@ public:
         m_assembler.vmul(dest, op1, op2);
     }
 
+    void andFloat(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
+    {
+        m_assembler.vand(dest, op1, op2);
+    }
+
     void andDouble(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
     {
         m_assembler.vand(dest, op1, op2);
+    }
+
+    void orFloat(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
+    {
+        m_assembler.vorr(dest, op1, op2);
     }
 
     void orDouble(FPRegisterID op1, FPRegisterID op2, FPRegisterID dest)
@@ -1514,6 +1539,18 @@ public:
         CRASH();
     }
 
+    NO_RETURN_DUE_TO_CRASH void roundTowardNearestIntFloat(FPRegisterID, FPRegisterID)
+    {
+        ASSERT(!supportsFloatingPointRounding());
+        CRASH();
+    }
+
+    NO_RETURN_DUE_TO_CRASH void roundTowardZeroFloat(FPRegisterID, FPRegisterID)
+    {
+        ASSERT(!supportsFloatingPointRounding());
+        CRASH();
+    }
+
     NO_RETURN_DUE_TO_CRASH void ceilDouble(FPRegisterID, FPRegisterID)
     {
         ASSERT(!supportsFloatingPointRounding());
@@ -1527,6 +1564,12 @@ public:
     }
 
     NO_RETURN_DUE_TO_CRASH void roundTowardZeroDouble(FPRegisterID, FPRegisterID)
+    {
+        ASSERT(!supportsFloatingPointRounding());
+        CRASH();
+    }
+
+    NO_RETURN_DUE_TO_CRASH void roundTowardNearestIntDouble(FPRegisterID, FPRegisterID)
     {
         ASSERT(!supportsFloatingPointRounding());
         CRASH();
@@ -1570,9 +1613,9 @@ public:
         m_assembler.vcvtsd(ARMRegisters::asSingle(dst), src);
     }
 
-    Jump branchDouble(DoubleCondition cond, FPRegisterID left, FPRegisterID right)
+private:
+    Jump makeFPBranch(DoubleCondition cond)
     {
-        m_assembler.vcmp(left, right);
         m_assembler.vmrs();
 
         if (cond == DoubleNotEqualAndOrdered) {
@@ -1592,6 +1635,19 @@ public:
             return result;
         }
         return makeBranch(cond);
+    }
+
+public:
+    Jump branchFloat(DoubleCondition cond, FPRegisterID left, FPRegisterID right)
+    {
+        m_assembler.vcmp(asSingle(left), asSingle(right));
+        return makeFPBranch(cond);
+    }
+
+    Jump branchDouble(DoubleCondition cond, FPRegisterID left, FPRegisterID right)
+    {
+        m_assembler.vcmp(left, right);
+        return makeFPBranch(cond);
     }
 
     enum BranchTruncateType { BranchIfTruncateFailed, BranchIfTruncateSuccessful };
@@ -2447,6 +2503,18 @@ public:
         m_assembler.mov(dest, ARMThumbImmediate::makeUInt16(0));
     }
 
+    void compareFloat(DoubleCondition cond, FPRegisterID left, FPRegisterID right, RegisterID dest)
+    {
+        // Not handled, but should not be used right now
+        ASSERT(cond != DoubleNotEqualAndOrdered);
+        ASSERT(cond != DoubleEqualOrUnordered);
+        m_assembler.vcmp(asSingle(left), asSingle(right));
+        m_assembler.vmrs();
+        m_assembler.it(armV7Condition(cond), false);
+        m_assembler.mov(dest, ARMThumbImmediate::makeUInt16(1));
+        m_assembler.mov(dest, ARMThumbImmediate::makeUInt16(0));
+    }
+
     // FIXME:
     // The mask should be optional... paerhaps the argument order should be
     // dest-src, operations always have a dest? ... possibly not true, considering
@@ -2807,10 +2875,6 @@ private:
 
     // TODO: MISSING IMPLEMENTATION PLACEHOLDERS BELOW. PUT THESE IN THE PLACE THEY BELONG ONCE IMPLEMENTED.
 public:
-    void andFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void orFloat(FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void compareFloat(DoubleCondition, FPRegisterID, FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    Jump branchFloat(DoubleCondition, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     Jump branchAdd64(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void mul64(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void zeroExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
@@ -2855,9 +2919,6 @@ public:
     void countTrailingZeros64(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void convertUInt64ToDouble(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void convertUInt64ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void roundTowardNearestIntDouble(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void roundTowardNearestIntFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void roundTowardZeroFloat(FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void rotateRight32(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
 
 };
