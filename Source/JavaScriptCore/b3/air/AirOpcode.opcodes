@@ -755,6 +755,9 @@ MoveZeroToDouble D:F:64
 32: Move64ToDouble U:G:32, U:G:32, D:F:64
     Tmp, Tmp, Tmp
 
+#32: Move32ToDoubleHi U:G:32, UD:F:64
+#    Tmp, Tmp
+
 Move32ToFloat U:G:32, D:F:32
     Tmp, Tmp
     x86: Addr, Tmp as loadFloat
@@ -764,6 +767,12 @@ Move32ToFloat U:G:32, D:F:32
     Tmp, Tmp
     Addr, Tmp as load64
     Index, Tmp as load64
+
+32: MoveDoubleTo64 U:F:64, D:G:32, D:G:32
+    Tmp, Tmp, Tmp
+
+32: MoveDoubleHiTo32 U:F:64, D:G:32
+    Tmp, Tmp
 
 MoveFloatTo32 U:F:32, D:G:32
     Tmp, Tmp

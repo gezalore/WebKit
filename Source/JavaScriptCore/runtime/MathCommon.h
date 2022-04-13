@@ -289,6 +289,7 @@ JSC_DECLARE_JIT_OPERATION(stdPowFloat, float, (float, float));
 JSC_DECLARE_JIT_OPERATION(fmodDouble, double, (double, double));
 JSC_DECLARE_JIT_OPERATION(roundDouble, double, (double));
 JSC_DECLARE_JIT_OPERATION(jsRoundDouble, double, (double));
+JSC_DECLARE_JIT_OPERATION(roundFloat, float, (float));
 
 } // namespace Math
 } // namespace JSC
