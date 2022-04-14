@@ -4230,6 +4230,11 @@ void AirIRGenerator::emitChecksForModOrDiv(bool isSignedDiv, ExpressionType left
     }
 }
 
+namespace {
+template<typename IntType> IntType softDiv(IntType a, IntType b) { return a / b ;}
+template<typename IntType> IntType softMod(IntType a, IntType b) { return a % b ;}
+}
+
 template <typename IntType>
 void AirIRGenerator::emitModOrDiv(bool isDiv, ExpressionType lhs, ExpressionType rhs, ExpressionType& result)
 {
@@ -4238,6 +4243,15 @@ void AirIRGenerator::emitModOrDiv(bool isDiv, ExpressionType lhs, ExpressionType
     result = sizeof(IntType) == 4 ? g32() : g64();
 
     bool isSigned = std::is_signed<IntType>::value;
+
+    if (isARM()) {
+        // TODO: use ARMv7 sdiv/udiv if available
+        if (isDiv)
+            emitCCall(&softDiv<IntType>, result, lhs, rhs);
+        else
+            emitCCall(&softMod<IntType>, result, lhs, rhs);
+        return;
+    }
 
     if (isARM64()) {
         B3::Air::Opcode div;
@@ -5670,11 +5684,11 @@ template<> auto AirIRGenerator::addOp<OpType::I32WrapI64>(ExpressionType arg0, E
 
 template<> auto AirIRGenerator::addOp<OpType::I32Rotl>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    if (isARM64()) {
-        // ARM64 doesn't have a rotate left.
-        auto newShift = g64();
+    if (isARM64() || isARM()) {
+        // ARMs do not have a rotate left.
+        auto newShift = isARM64() ? g64() : g32();
         append(Move, arg1, newShift);
-        append(Neg64, newShift);
+        append(isARM64() ? Neg64 : Neg32, newShift);
         return addShift(Types::I32, RotateRight32, arg0, newShift, result);
     } else
         return addShift(Types::I32, RotateLeft32, arg0, arg1, result);

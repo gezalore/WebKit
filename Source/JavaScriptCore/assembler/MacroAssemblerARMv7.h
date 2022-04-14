@@ -354,6 +354,12 @@ public:
         m_assembler.clz(dest, src);
     }
 
+    void countTrailingZeros32(RegisterID src, RegisterID dest)
+    {
+        m_assembler.rbit(dest, src);
+        m_assembler.clz(dest, dest);
+    }
+
     void lshift32(RegisterID src, RegisterID shiftAmount, RegisterID dest)
     {
         RegisterID scratch = getCachedDataTempRegisterIDAndInvalidate();
@@ -493,6 +499,11 @@ public:
             move(imm, dataTempRegister);
             m_assembler.orr(dest, src, dataTempRegister);
         }
+    }
+
+    void rotateRight32(RegisterID op1, RegisterID op2, RegisterID dest)
+    {
+        m_assembler.ror(dest, op1, op2);
     }
 
     void rotateRight32(RegisterID src, TrustedImm32 imm, RegisterID dest)
@@ -2515,6 +2526,14 @@ public:
         m_assembler.mov(dest, ARMThumbImmediate::makeUInt16(0));
     }
 
+    void test32(ResultCondition cond, RegisterID op1, RegisterID op2, RegisterID dest)
+    {
+        m_assembler.tst(op1, op2);
+        m_assembler.it(armV7Condition(cond), false);
+        m_assembler.mov(dest, ARMThumbImmediate::makeUInt16(1));
+        m_assembler.mov(dest, ARMThumbImmediate::makeUInt16(0));
+    }
+
     // FIXME:
     // The mask should be optional... paerhaps the argument order should be
     // dest-src, operations always have a dest? ... possibly not true, considering
@@ -2904,8 +2923,6 @@ public:
     void moveDoubleConditionallyFloat(DoubleCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveDoubleConditionallyFloat(RelationalCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void loadFence() { UNREACHABLE_FOR_PLATFORM(); }
-    void test32(ResultCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void test32(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void test32(ResultCondition, RegisterID, TrustedImm32, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void truncateFloatToInt32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void truncateFloatToUint32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
@@ -2915,11 +2932,9 @@ public:
     void truncateDoubleToInt64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void truncateDoubleToUint64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void truncateDoubleToUint64(FPRegisterID, RegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void countTrailingZeros32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void countTrailingZeros64(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void convertUInt64ToDouble(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void convertUInt64ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void rotateRight32(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
 
 };
 
