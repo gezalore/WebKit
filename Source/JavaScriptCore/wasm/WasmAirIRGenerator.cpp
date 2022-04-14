@@ -5610,7 +5610,22 @@ template<> auto AirIRGenerator::addOp<OpType::F32Eq>(ExpressionType arg0, Expres
 template<> auto AirIRGenerator::addOp<OpType::I64Eq>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g32();
+#if USE(JSVALUE64)
     append(Compare64, Arg::relCond(MacroAssembler::Equal), arg0, arg1, result);
+#elif USE(JSVALUE32_64)
+    BasicBlock* checkLo = m_code.addBlock();
+    BasicBlock* continuation = m_code.addBlock();
+
+    append(Move, Arg::imm(0), result);
+    append(Branch32, Arg::relCond(MacroAssembler::NotEqual), arg0.hi(), arg1.hi());
+    m_currentBlock->setSuccessors(continuation, checkLo);
+    m_currentBlock = checkLo;
+
+    append(Compare32, Arg::relCond(MacroAssembler::Equal), arg0.lo(), arg1.lo(), result);
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = continuation;
+#endif
     return { };
 }
 
