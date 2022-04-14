@@ -146,7 +146,7 @@ public:
         return Arg(tmp());
     }
 
-    explicit operator bool() const { return !!tmp(); }
+    explicit operator bool() const { return !!m_tmp; }
 
     Tmp tmp() const
     {
@@ -1134,19 +1134,38 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
     CallInformation wasmCallInfo = wasmCallingConvention().callInformationFor(signature, CallRole::Callee);
 
     for (unsigned i = 0; i < wasmCallInfo.params.size(); ++i) {
-        B3::ValueRep location = wasmCallInfo.params[i];
-        Arg arg = location.isReg() ? Arg(Tmp(location.reg())) : Arg::addr(Tmp(GPRInfo::callFrameRegister), location.offsetFromFP());
+        ValueLocation location = wasmCallInfo.params[i];
+        B3::ValueRep valueRep { location };
+        Arg arg = valueRep.isReg() ? Arg(Tmp(valueRep.reg())) : Arg::addr(Tmp(GPRInfo::callFrameRegister), valueRep.offsetFromFP() + PayloadOffset);
+#if USE(JSVALUE32_64)
+        Arg argHi;
+        if (location.isGPR())
+            argHi = Arg(Tmp(location.jsr().tagGPR()));
+        else if (location.isStack())
+            argHi = Arg::addr(Tmp(GPRInfo::callFrameRegister), valueRep.offsetFromFP() + TagOffset);
+#endif
         switch (signature.as<FunctionSignature>()->argumentType(i).kind) {
         case TypeKind::I32:
             append(Move32, arg, m_locals[i]);
             break;
         case TypeKind::I64:
+#if USE(JSVALUE64)
+            append(Move, arg, m_locals[i]);
+#elif USE(JSVALUE32_64)
+            append(Move, argHi, m_locals[i].hi());
+            append(Move, arg, m_locals[i].lo());
+#endif
+            break;
         case TypeKind::Externref:
         case TypeKind::Funcref:
         case TypeKind::Ref:
         case TypeKind::RefNull:
         case TypeKind::Rtt:
+#if USE(JSVALUE64)
             append(Move, arg, m_locals[i]);
+#elif USE(JSVALUE32_64)
+            UNREACHABLE_FOR_PLATFORM();
+#endif
             break;
         case TypeKind::F32:
             append(MoveFloat, arg, m_locals[i]);
@@ -1579,9 +1598,17 @@ auto AirIRGenerator::addTableCopy(unsigned dstTableIndex, unsigned srcTableIndex
 
 auto AirIRGenerator::getLocal(uint32_t index, ExpressionType& result) -> PartialResult
 {
-    ASSERT(m_locals[index].tmp());
-    result = tmpForType(m_locals[index].type());
-    append(moveOpForValueType(m_locals[index].type()), m_locals[index].tmp(), result);
+    TypedTmp local = m_locals[index];
+    ASSERT(local);
+    result = tmpForType(local.type());
+#if USE(JSVALUE32_64)
+    if (local.type().isI64()) {
+        append(Move, local.hi(), result.hi());
+        append(Move, local.lo(), result.lo());
+        return { };
+    }
+#endif
+    append(moveOpForValueType(local.type()), local, result);
     return { };
 }
 
@@ -3728,17 +3755,36 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
     m_code.requestCallArgAreaSizeInBytes(WTF::roundUpToMultipleOf(stackAlignmentBytes(), locations.headerAndArgumentStackSizeInBytes));
 
     size_t offset = patchArgs.size();
-    Checked<size_t> newSize = checkedSum<size_t>(patchArgs.size(), args.size());
+    size_t argConstraints = args.size();
+#if USE(JSVALUE32_64)
+    for (unsigned i = 0; i < args.size(); ++i) {
+        if (args[i].type().isI64() && locations.params[i].isGPR())
+            ++argConstraints;
+        }
+#endif
+    Checked<size_t> newSize = checkedSum<size_t>(patchArgs.size(), argConstraints);
     RELEASE_ASSERT(!newSize.hasOverflowed());
 
     patchArgs.grow(newSize);
-    for (unsigned i = 0; i < args.size(); ++i)
+    for (unsigned i = 0; i < argConstraints;) {
+#if USE(JSVALUE32_64)
+        if (args[i].type().isI64() && locations.params[i].isGPR()) {
+            patchArgs[i + offset] = ConstrainedTmp(args[i].lo(), B3::ValueRep(locations.params[i].jsr().payloadGPR()));
+            patchArgs[i + 1 + offset] = ConstrainedTmp(args[i].hi(), B3::ValueRep(locations.params[i].jsr().tagGPR()));
+            i += 2;
+            continue;
+        }
+#endif
         patchArgs[i + offset] = ConstrainedTmp(args[i], locations.params[i]);
+        i += 1;
+    }
 
     if (patchpoint->type() != B3::Void) {
         Vector<B3::ValueRep, 1> resultConstraints;
-        for (auto valueLocation : locations.results)
+        for (auto valueLocation : locations.results) {
+//            ASSERT(!valueLocation.isGPR());
             resultConstraints.append(B3::ValueRep(valueLocation));
+        }
         patchpoint->resultConstraints = WTFMove(resultConstraints);
     }
     PatchpointExceptionHandle exceptionHandle = preparePatchpointForExceptions(patchpoint, patchArgs);
