@@ -668,6 +668,7 @@ private:
         OP_LSR_reg_T2   = 0xFA20,
         OP_ASR_reg_T2   = 0xFA40,
         OP_ROR_reg_T2   = 0xFA60,
+        OP_RBIT         = 0xFA90,
         OP_CLZ          = 0xFAB0,
         OP_SMULL_T1     = 0xFB80,
 #if HAVE(ARM_IDIV_INSTRUCTIONS)
@@ -1510,6 +1511,13 @@ public:
             m_formatter.oneWordOp10Reg3Reg3(OP_ORR_reg_T1, rn, rd);
         else
             orr_S(rd, rn, rm, ShiftTypeAndAmount());
+    }
+
+    ALWAYS_INLINE void rbit(RegisterID rd, RegisterID rm)
+    {
+        ASSERT(!BadReg(rd));
+        ASSERT(!BadReg(rm));
+        m_formatter.twoWordOp12Reg4FourFours(OP_RBIT, rm,FourFours(0xf, rd, 0xa, rm));
     }
 
     ALWAYS_INLINE void ror(RegisterID rd, RegisterID rm, int32_t shiftAmount)
