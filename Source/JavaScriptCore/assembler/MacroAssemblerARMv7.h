@@ -405,6 +405,11 @@ public:
         m_assembler.smull(dest, dataTempRegister, src, dataTempRegister);
     }
 
+    void uMull32(RegisterID left, RegisterID right, RegisterID destHi, RegisterID destLo)
+    {
+        m_assembler.umull(destLo, destHi, left, right);
+    }
+
     void neg32(RegisterID srcDest)
     {
         m_assembler.neg(srcDest, srcDest);

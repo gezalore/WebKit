@@ -671,6 +671,7 @@ private:
         OP_RBIT         = 0xFA90,
         OP_CLZ          = 0xFAB0,
         OP_SMULL_T1     = 0xFB80,
+        OP_UMULL_T1     = 0xFBA0,
 #if HAVE(ARM_IDIV_INSTRUCTIONS)
         OP_SDIV_T1      = 0xFB90,
         OP_UDIV_T1      = 0xFBB0,
@@ -1594,6 +1595,16 @@ public:
         ASSERT(!BadReg(rm));
         ASSERT(rdLo != rdHi);
         m_formatter.twoWordOp12Reg4FourFours(OP_SMULL_T1, rn, FourFours(rdLo, rdHi, 0, rm));
+    }
+
+    ALWAYS_INLINE void umull(RegisterID rdLo, RegisterID rdHi, RegisterID rn, RegisterID rm)
+    {
+        ASSERT(!BadReg(rdLo));
+        ASSERT(!BadReg(rdHi));
+        ASSERT(!BadReg(rn));
+        ASSERT(!BadReg(rm));
+        ASSERT(rdLo != rdHi);
+        m_formatter.twoWordOp12Reg4FourFours(OP_UMULL_T1, rn, FourFours(rdLo, rdHi, 0, rm));
     }
 
     // rt == ARMRegisters::pc only allowed if last instruction in IT (if then) block.
