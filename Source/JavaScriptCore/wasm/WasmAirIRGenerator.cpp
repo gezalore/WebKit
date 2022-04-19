@@ -1283,22 +1283,16 @@ void AirIRGenerator::restoreWebAssemblyGlobalState(RestoreCachedStackLimit resto
     restoreWasmContextInstance(block, instance);
 
     if (restoreCachedStackLimit == RestoreCachedStackLimit::Yes) {
-#if USE(JSVALUE64)
         // The Instance caches the stack limit, but also knows where its canonical location is.
-        static_assert(sizeof(std::declval<Instance*>()->cachedStackLimit()) == sizeof(uint64_t), "codegen relies on this size");
-
-        RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfPointerToActualStackLimit(), B3::Width64));
-        RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfCachedStackLimit(), B3::Width64));
-        auto temp = g64();
+        RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfPointerToActualStackLimit(), B3::pointerWidth()));
+        RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfCachedStackLimit(), B3::pointerWidth()));
+        auto temp = gPtr();
         append(block, Move, Arg::addr(instanceValue(), Instance::offsetOfPointerToActualStackLimit()), temp);
         append(block, Move, Arg::addr(temp), temp);
         append(block, Move, temp, Arg::addr(instanceValue(), Instance::offsetOfCachedStackLimit()));
-#elif USE(JSVALUE32_64)
-        UNREACHABLE_FOR_PLATFORM();
-#endif
     }
 
-    if (!!memory) {
+    if (!!memory && !isARM()) {
         const PinnedRegisterInfo* pinnedRegs = &PinnedRegisterInfo::get();
         RegisterSet clobbers;
         clobbers.set(pinnedRegs->baseMemoryPointer);
@@ -3849,22 +3843,22 @@ auto AirIRGenerator::addCall(uint32_t functionIndex, const TypeDefinition& signa
     if (m_info.isImportedFunctionFromFunctionIndexSpace(functionIndex)) {
         m_maxNumJSCallArguments = std::max(m_maxNumJSCallArguments, static_cast<uint32_t>(args.size()));
 
-        auto currentInstance = g64();
+        auto currentInstance = gPtr();
         append(Move, instanceValue(), currentInstance);
 
-        auto targetInstance = g64();
+        auto targetInstance = gPtr();
 
         // FIXME: We should have better isel here.
         // https://bugs.webkit.org/show_bug.cgi?id=193999
         append(Move, Arg::bigImm(Instance::offsetOfTargetInstance(functionIndex)), targetInstance);
-        append(Add64, instanceValue(), targetInstance);
+        append(is64Bit() ? Add64 : Add32, instanceValue(), targetInstance);
         append(Move, Arg::addr(targetInstance), targetInstance);
 
         BasicBlock* isWasmBlock = m_code.addBlock();
         BasicBlock* isEmbedderBlock = m_code.addBlock();
         BasicBlock* continuation = m_code.addBlock();
 
-        append(BranchTest64, Arg::resCond(MacroAssembler::NonZero), targetInstance, targetInstance);
+        append(is64Bit() ? BranchTest64 : BranchTest32, Arg::resCond(MacroAssembler::NonZero), targetInstance, targetInstance);
         m_currentBlock->setSuccessors(isWasmBlock, isEmbedderBlock);
 
         {
@@ -3890,9 +3884,9 @@ auto AirIRGenerator::addCall(uint32_t functionIndex, const TypeDefinition& signa
         }
 
         {
-            auto jumpDestination = g64();
+            auto jumpDestination = gPtr();
             append(isEmbedderBlock, Move, Arg::bigImm(Instance::offsetOfWasmToEmbedderStub(functionIndex)), jumpDestination);
-            append(isEmbedderBlock, Add64, instanceValue(), jumpDestination);
+            append(isEmbedderBlock, is64Bit() ? Add64 : Add32, instanceValue(), jumpDestination);
             append(isEmbedderBlock, Move, Arg::addr(jumpDestination), jumpDestination);
 
             Vector<ConstrainedTmp> jumpArgs;
