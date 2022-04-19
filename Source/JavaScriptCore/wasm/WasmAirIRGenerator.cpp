@@ -815,20 +815,28 @@ private:
         inst.args.append(callee);
 
         if (result) {
-            if (is32Bit() && result.type().isI64()) {
+#if USE(JSVALUE64)
+            inst.args.append(result.tmp());
+#elif USE(JSVALUE32_64)
+            if (result.type().isI64()) {
                 inst.args.append(result.lo());
                 inst.args.append(result.hi());
             } else
                 inst.args.append(result.tmp());
+#endif
         }
 
 
         for (TypedTmp& arg : Vector<TypedTmp, sizeof...(Args)>::from(theArgs...)) {
-            if (is32Bit() && arg.type().isI64()) {
+#if USE(JSVALUE64)
+            inst.args.append(arg.tmp());
+#elif USE(JSVALUE32_64)
+            if (arg.type().isI64()) {
                 inst.args.append(arg.lo());
                 inst.args.append(arg.hi());
             } else
                 inst.args.append(arg.tmp());
+#endif
         }
 
         validateInst(inst);
@@ -1126,7 +1134,7 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
     });
 
     if (Context::useFastTLS()) {
-        m_instanceValue = g64();
+        m_instanceValue = gPtr();
         // FIXME: Would be nice to only do this if we use instance value.
         append(Move, Tmp(m_prologueWasmContextGPR), m_instanceValue);
     } else
@@ -3809,9 +3817,9 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
     if (patchpoint->type() != B3::Void) {
         Vector<B3::ValueRep, 1> resultConstraints;
         for (unsigned i = 0; i < results.size(); ++i) {
-            const TypedTmp& result = results[i];
             ValueLocation& loc = locations.results[i];
 #if USE(JSVALUE32_64)
+            const TypedTmp& result = results[i];
             if (result.type().isI64() && loc.isGPR()) {
                 resultConstraints.append(B3::ValueRep(loc.jsr().payloadGPR()));
                 resultConstraints.append(B3::ValueRep(loc.jsr().tagGPR()));
@@ -5855,7 +5863,7 @@ template<> auto AirIRGenerator::addOp<OpType::I64LeS>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::I64Add>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g64();
-#if USE(JSVALU64)
+#if USE(JSVALUE64)
     append(Add64, arg0, arg1, result);
 #elif USE(JSVALUE32_64)
     append(Add64, arg0.hi(), arg0.lo(), arg1.hi(), arg1.lo(), result.hi(), result.lo());

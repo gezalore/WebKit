@@ -1288,9 +1288,11 @@ public:
                 return isValidScaledUImm12<64>(offset);
             }
         }
-        if (isARM())
-            return MacroAssemblerARMv7::BoundsNonDoubleWordOffset::within(offset);
+#if CPU(ARM_THUMB2)
+        return MacroAssemblerARMv7::BoundsNonDoubleWordOffset::within(offset);
+#else
         return false;
+#endif
     }
 
     template<typename Int, typename = Value::IsLegalOffset<Int>>

@@ -121,6 +121,7 @@ size_t cCallResultCount(CCallValue* value)
 
 Tmp cCallResult(CCallValue* value, unsigned index)
 {
+    ASSERT_UNUSED(index, index <= (is64Bit() ? 1 : 2));
     switch (value->type().kind()) {
     case Void:
         return Tmp();
