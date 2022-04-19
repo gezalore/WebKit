@@ -103,6 +103,7 @@ public:
         : m_tmp(tmp)
         , m_type(type)
     {
+        ASSERT(type != Types::Void);
         ASSERT(!isHandledAsGPPair());
     }
 
@@ -794,41 +795,17 @@ private:
     template <typename Func, typename ...Args>
     void emitCCall(BasicBlock* block, Func func, TypedTmp result, Args... theArgs)
     {
-        B3::Type resultType = B3::Void;
-        if (result) {
-            switch (result.type().kind) {
-            case TypeKind::I32:
-                resultType = B3::Int32;
-                break;
-            case TypeKind::I64:
-            case TypeKind::Externref:
-            case TypeKind::Funcref:
-            case TypeKind::Ref:
-            case TypeKind::RefNull:
-                resultType = B3::Int64;
-                break;
-            case TypeKind::F32:
-                resultType = B3::Float;
-                break;
-            case TypeKind::F64:
-                resultType = B3::Double;
-                break;
-            default:
-                RELEASE_ASSERT_NOT_REACHED();
-            }
-        }
+        B3::Type resultType = toB3Type(result.type());
 
-        auto makeDummyValue = [&] (Tmp tmp) {
+        auto makeDummyValue = [&] (TypedTmp tmp) {
             // FIXME: This is less than ideal to create dummy values just to satisfy Air's
-            // validation. We should abstrcat CCall enough so we're not reliant on arguments
+            // validation. We should abstract CCall enough so we're not reliant on arguments
             // to the B3::CCallValue.
             // https://bugs.webkit.org/show_bug.cgi?id=194040
-            if (tmp.isGP())
-                return m_proc.addConstant(B3::Origin(), B3::Int64, 0);
-            return m_proc.addConstant(B3::Origin(), B3::Double, 0);
+            return m_proc.addConstant(B3::Origin(), toB3Type(tmp.type()), 0);
         };
 
-        B3::Value* dummyFunc = m_proc.addConstant(B3::Origin(), B3::Int64, bitwise_cast<uintptr_t>(func));
+        B3::Value* dummyFunc = m_proc.addConstant(B3::Origin(), B3::pointerType(), bitwise_cast<uintptr_t>(func));
         B3::Value* origin = m_proc.add<B3::CCallValue>(resultType, B3::Origin(), B3::Effects::none(), dummyFunc, makeDummyValue(theArgs)...);
 
         Inst inst(CCall, origin);
@@ -837,12 +814,24 @@ private:
         append(block, Move, Arg::immPtr(tagCFunctionPtr<void*, OperationPtrTag>(func)), callee);
         inst.args.append(callee);
 
-        if (result)
-            inst.args.append(result.tmp());
+        if (result) {
+            if (is32Bit() && result.type().isI64()) {
+                inst.args.append(result.lo());
+                inst.args.append(result.hi());
+            } else
+                inst.args.append(result.tmp());
+        }
 
-        for (Tmp tmp : Vector<Tmp, sizeof...(Args)>::from(theArgs.tmp()...))
-            inst.args.append(tmp);
 
+        for (TypedTmp& arg : Vector<TypedTmp, sizeof...(Args)>::from(theArgs...)) {
+            if (is32Bit() && arg.type().isI64()) {
+                inst.args.append(arg.lo());
+                inst.args.append(arg.hi());
+            } else
+                inst.args.append(arg.tmp());
+        }
+
+        validateInst(inst);
         block->append(WTFMove(inst));
     }
 
