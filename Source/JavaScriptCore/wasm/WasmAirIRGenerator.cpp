@@ -620,6 +620,10 @@ private:
 
     B3::PatchpointValue* addPatchpoint(B3::Type type)
     {
+#if USE(JSVALUE32_64) && ASSERT_ENABLED
+        for (B3::Type kind : (type.isTuple() ? m_proc.tupleForType(type) : Vector<B3::Type> { type }))
+            ASSERT(kind != B3::Int64);
+#endif
         auto* result = m_proc.add<B3::PatchpointValue>(type, B3::Origin());
         if (UNLIKELY(shouldDumpIRAtEachPhase(B3::AirMode)))
             m_patchpoints.add(result);
@@ -627,40 +631,33 @@ private:
     }
 
     template <typename ...Args>
-    void emitPatchpoint(B3::PatchpointValue* patch, Tmp result, Args... theArgs)
+    void emitPatchpoint(B3::PatchpointValue* patch, ExpressionType result, Args... theArgs)
     {
         emitPatchpoint(m_currentBlock, patch, result, std::forward<Args>(theArgs)...);
     }
 
     template <typename ...Args>
-    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, Tmp result, Args... theArgs)
+    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, ExpressionType result, Args... theArgs)
     {
-        emitPatchpoint(basicBlock, patch, Vector<Tmp, 8> { result }, Vector<ConstrainedTmp, sizeof...(Args)>::from(theArgs...));
+        emitPatchpoint(basicBlock, patch, Vector<ExpressionType, 8> { result }, Vector<ConstrainedTmp, sizeof...(Args)>::from(theArgs...));
     }
 
-    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, Tmp result)
+    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, ExpressionType result)
     {
-        emitPatchpoint(basicBlock, patch, Vector<Tmp, 8> { result }, Vector<ConstrainedTmp>());
+        emitPatchpoint(basicBlock, patch, Vector<ExpressionType, 8> { result }, Vector<ConstrainedTmp>());
     }
 
     template <size_t inlineSize>
-    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, Tmp result, Vector<ConstrainedTmp, inlineSize>&& args)
+    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, ExpressionType result, Vector<ConstrainedTmp, inlineSize>&& args)
     {
-        emitPatchpoint(basicBlock, patch, Vector<Tmp, 8> { result }, WTFMove(args));
+        emitPatchpoint(basicBlock, patch, Vector<ExpressionType, 8> { result }, WTFMove(args));
     }
 
-    template <typename ResultTmpType, size_t inlineSize>
-    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, const Vector<ResultTmpType, 8>& results, Vector<ConstrainedTmp, inlineSize>&& args)
+    template <size_t inlineSize>
+    void emitPatchpoint(BasicBlock* basicBlock, B3::PatchpointValue* patch, const Vector<ExpressionType, 8>& results, Vector<ConstrainedTmp, inlineSize>&& args)
     {
         if (!m_patchpointSpecial)
             m_patchpointSpecial = static_cast<B3::PatchpointSpecial*>(m_code.addSpecial(makeUnique<B3::PatchpointSpecial>()));
-
-        auto toTmp = [&] (ResultTmpType tmp) {
-            if constexpr (std::is_same_v<ResultTmpType, Tmp>)
-                return tmp;
-            else
-                return tmp.tmp();
-        };
 
         Inst inst(Patch, patch, Arg::special(m_patchpointSpecial));
         Vector<Inst, 1> resultMovs;
@@ -669,27 +666,53 @@ private:
             break;
         default: {
             ASSERT(results.size());
+            unsigned j = 0;
             for (unsigned i = 0; i < results.size(); ++i) {
-                switch (patch->resultConstraints[i].kind()) {
+                const ExpressionType& result = results[i];
+                B3::ValueRep valueRep = patch->resultConstraints[j++];
+                switch (valueRep.kind()) {
                 case B3::ValueRep::StackArgument: {
-                    Arg arg = Arg::callArg(patch->resultConstraints[i].offsetFromSP());
+                    Arg arg = Arg::callArg(valueRep.offsetFromSP());
                     inst.args.append(arg);
-                    resultMovs.append(Inst(B3::Air::moveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, arg, toTmp(results[i])));
+#if USE(JSVALUE32_64)
+                    if (result.type().isI64()) {
+                        RELEASE_ASSERT_NOT_REACHED();
+                        break;
+                    }
+#endif
+                    resultMovs.append(Inst(B3::Air::moveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, arg, result.tmp()));
                     break;
                 }
                 case B3::ValueRep::Register: {
-                    inst.args.append(Tmp(patch->resultConstraints[i].reg()));
-                    resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(patch->resultConstraints[i].reg()), toTmp(results[i])));
+#if USE(JSVALUE32_64)
+                    if (result.type().isI64()) {
+                        inst.args.append(Tmp(valueRep.reg()));
+                        resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.lo()));
+                        valueRep = patch->resultConstraints[j++];
+                        inst.args.append(Tmp(valueRep.reg()));
+                        resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.hi()));
+                        break;
+                    }
+#endif
+                    inst.args.append(Tmp(valueRep.reg()));
+                    resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.tmp()));
                     break;
                 }
                 case B3::ValueRep::SomeRegister: {
-                    inst.args.append(toTmp(results[i]));
+#if USE(JSVALUE32_64)
+                    if (result.type().isI64()) {
+                        RELEASE_ASSERT_NOT_REACHED();
+                        break;
+                    }
+#endif
+                    inst.args.append(result.tmp());
                     break;
                 }
                 default:
                     RELEASE_ASSERT_NOT_REACHED();
                 }
             }
+            ASSERT(j == patch->resultConstraints.size());
         }
         }
 
@@ -699,7 +722,7 @@ private:
             // validation. We should abstrcat Patch enough so ValueRep's don't need to be
             // backed by Values.
             // https://bugs.webkit.org/show_bug.cgi?id=194040
-            B3::Value* dummyValue = m_proc.addConstant(B3::Origin(), tmp.tmp.isGP() ? B3::Int64 : B3::Double, 0);
+            B3::Value* dummyValue = m_proc.addConstant(B3::Origin(), tmp.tmp.isGP() ? B3::pointerType() : B3::Double, 0);
             patch->append(dummyValue, tmp.rep);
             switch (tmp.rep.kind()) {
             // B3::Value propagates (Late)ColdAny information and later Air will allocate appropriate stack.
@@ -730,7 +753,7 @@ private:
                 patch->lateClobbered().clear(valueRep.reg());
         }
         for (unsigned i = patch->numGPScratchRegisters; i--;)
-            inst.args.append(g64().tmp());
+            inst.args.append(gPtr().tmp());
         for (unsigned i = patch->numFPScratchRegisters; i--;)
             inst.args.append(f64().tmp());
 
@@ -994,7 +1017,7 @@ void AirIRGenerator::restoreWasmContextInstance(BasicBlock* block, TypedTmp inst
             AllowMacroScratchRegisterUsageIf allowScratch(jit, CCallHelpers::storeWasmContextInstanceNeedsMacroScratchRegister());
             jit.storeWasmContextInstance(params[0].gpr());
         });
-        emitPatchpoint(block, patchpoint, Tmp(), instance);
+        emitPatchpoint(block, patchpoint, TypedTmp(), instance);
         return;
     }
 
@@ -1010,7 +1033,7 @@ void AirIRGenerator::restoreWasmContextInstance(BasicBlock* block, TypedTmp inst
     patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& param) {
         jit.move(param[0].gpr(), wasmContextInstanceGPR);
     });
-    emitPatchpoint(block, patchpoint, Tmp(), instance);
+    emitPatchpoint(block, patchpoint, TypedTmp(), instance);
 }
 
 AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& procedure, InternalFunction* compilation, Vector<UnlinkedWasmToWasmCall>& unlinkedWasmToWasmCalls, MemoryMode mode, unsigned functionIndex, TierUpCount* tierUp, const TypeDefinition& signature, unsigned& osrEntryScratchBufferSize)
@@ -1233,16 +1256,26 @@ void AirIRGenerator::finalizeEntrypoints()
 
 B3::Type AirIRGenerator::toB3ResultType(BlockSignature returnType)
 {
+    // TODO: only GPR I64s are passed as I32s
     if (returnType->as<FunctionSignature>()->returnsVoid())
         return B3::Void;
 
-    if (returnType->as<FunctionSignature>()->returnCount() == 1)
+    if (returnType->as<FunctionSignature>()->returnCount() == 1 && (is64Bit() || !returnType->returnType(0).isI64()))
         return toB3Type(returnType->as<FunctionSignature>()->returnType(0));
 
     auto result = m_tupleMap.ensure(returnType, [&] {
         Vector<B3::Type> result;
         for (unsigned i = 0; i < returnType->as<FunctionSignature>()->returnCount(); ++i)
-            result.append(toB3Type(returnType->as<FunctionSignature>()->returnType(i)));
+            Type type = returnType->as<FunctionSignature>()->returnType(i);
+#if USE(JSVALUE32_64)
+            if (type.isI64()) {
+                result.append(B3::Int32);
+                result.append(B3::Int32);
+                continue;
+            }
+#endif
+            result.append(toB3Type(type));
+        }
         return m_proc.addTuple(WTFMove(result));
     });
     return result.iterator->value;
@@ -1294,7 +1327,7 @@ void AirIRGenerator::restoreWebAssemblyGlobalState(RestoreCachedStackLimit resto
             jit.cageConditionallyAndUntag(Gigacage::Primitive, baseMemory, pinnedRegs->boundsCheckingSizeRegister, scratch);
         });
 
-        emitPatchpoint(block, patchpoint, Tmp(), instance);
+        emitPatchpoint(block, patchpoint, TypedTmp(), instance);
     }
 }
 
@@ -1619,7 +1652,7 @@ auto AirIRGenerator::addUnreachable() -> PartialResult
         this->emitThrowException(jit, ExceptionType::Unreachable);
     });
     unreachable->effects.terminal = true;
-    emitPatchpoint(unreachable, Tmp());
+    emitPatchpoint(unreachable, TypedTmp());
     return { };
 }
 
@@ -1855,7 +1888,7 @@ auto AirIRGenerator::setGlobal(uint32_t index, ExpressionType value) -> PartialR
             doFence->setGenerator([] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
                 jit.memoryFence();
             });
-            emitPatchpoint(doFence, Tmp());
+            emitPatchpoint(doFence, TypedTmp());
 
             append(Load8, Arg::addr(cell, JSCell::cellStateOffset()), cellState);
             append(Branch32, Arg::relCond(MacroAssembler::Above), cellState, Arg::imm(blackThreshold));
@@ -1903,7 +1936,7 @@ inline void AirIRGenerator::emitWriteBarrierForJSWrapper()
     doFence->setGenerator([] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
         jit.memoryFence();
     });
-    emitPatchpoint(doFence, Tmp());
+    emitPatchpoint(doFence, TypedTmp());
 
     append(Load8, Arg::addr(cell, JSCell::cellStateOffset()), cellState);
     append(Branch32, Arg::relCond(MacroAssembler::Above), cellState, Arg::imm(blackThreshold));
@@ -2121,7 +2154,7 @@ auto AirIRGenerator::load(LoadOpType op, ExpressionType pointer, ExpressionType&
         patch->setGenerator([this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-        emitPatchpoint(patch, Tmp());
+        emitPatchpoint(patch, TypedTmp());
 
         // We won't reach here, so we just pick a random reg.
         switch (op) {
@@ -2236,7 +2269,7 @@ auto AirIRGenerator::store(StoreOpType op, ExpressionType pointer, ExpressionTyp
         throwException->setGenerator([this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-        emitPatchpoint(throwException, Tmp());
+        emitPatchpoint(throwException, TypedTmp());
     } else
         emitStoreOp(op, emitCheckAndPreparePointer(pointer, offset, sizeOfStoreOp(op)), value, offset);
 
@@ -2578,7 +2611,7 @@ auto AirIRGenerator::atomicLoad(ExtAtomicOpType op, Type valueType, ExpressionTy
         patch->setGenerator([this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-        emitPatchpoint(patch, Tmp());
+        emitPatchpoint(patch, TypedTmp());
 
         // We won't reach here, so we just pick a random reg.
         switch (valueType.kind) {
@@ -2645,7 +2678,7 @@ auto AirIRGenerator::atomicStore(ExtAtomicOpType op, Type valueType, ExpressionT
         throwException->setGenerator([this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-        emitPatchpoint(throwException, Tmp());
+        emitPatchpoint(throwException, TypedTmp());
     } else
         emitAtomicStoreOp(op, valueType, emitCheckAndPreparePointer(pointer, offset, sizeOfAtomicOpMemoryAccess(op)), value, offset);
 
@@ -2803,7 +2836,7 @@ auto AirIRGenerator::atomicBinaryRMW(ExtAtomicOpType op, Type valueType, Express
         patch->setGenerator([this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-        emitPatchpoint(patch, Tmp());
+        emitPatchpoint(patch, TypedTmp());
 
         switch (valueType.kind) {
         case TypeKind::I32:
@@ -2901,7 +2934,7 @@ auto AirIRGenerator::atomicCompareExchange(ExtAtomicOpType op, Type valueType, E
         patch->setGenerator([this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-        emitPatchpoint(patch, Tmp());
+        emitPatchpoint(patch, TypedTmp());
 
         // We won't reach here, so we just pick a random reg.
         switch (valueType.kind) {
@@ -3215,7 +3248,7 @@ void AirIRGenerator::emitEntryTierUpCheck()
         });
     });
 
-    emitPatchpoint(patch, Tmp(), countdownPtr);
+    emitPatchpoint(patch, TypedTmp(), countdownPtr);
 }
 
 void AirIRGenerator::emitLoopTierUpCheck(uint32_t loopIndex, const Vector<TypedTmp>& liveValues)
@@ -3477,9 +3510,9 @@ Tmp AirIRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned ex
         });
     });
 
-    Tmp exception = Tmp(GPRInfo::returnValueGPR);
-    Tmp buffer = Tmp(GPRInfo::returnValueGPR2);
-    emitPatchpoint(m_currentBlock, patch, Vector<Tmp, 8>::from(exception, buffer), Vector<ConstrainedTmp, 1>::from(instanceValue()));
+    TypedTmp exception = TypedTmp(Tmp(GPRInfo::returnValueGPR), is64Bit() ? Types::I64 : Types::I32);
+    TypedTmp buffer = TypedTmp(Tmp(GPRInfo::returnValueGPR2), is64Bit() ? Types::I64 : Types::I32);
+    emitPatchpoint(m_currentBlock, patch, Vector<TypedTmp, 8>::from(exception, buffer), Vector<ConstrainedTmp, 1>::from(instanceValue()));
     append(Move, exception, data.exception());
 
     return buffer;
@@ -3520,7 +3553,7 @@ auto AirIRGenerator::addThrow(unsigned exceptionIndex, Vector<ExpressionType>& a
         emitThrowImpl(jit, exceptionIndex); 
     });
 
-    emitPatchpoint(m_currentBlock, patch, Tmp(), WTFMove(patchArgs));
+    emitPatchpoint(m_currentBlock, patch, TypedTmp(), WTFMove(patchArgs));
 
     return { };
 }
@@ -3543,7 +3576,7 @@ auto AirIRGenerator::addRethrow(unsigned, ControlType& data) -> PartialResult
         emitRethrowImpl(jit);
     });
 
-    emitPatchpoint(m_currentBlock, patch, Tmp(), WTFMove(patchArgs));
+    emitPatchpoint(m_currentBlock, patch, TypedTmp(), WTFMove(patchArgs));
 
     return { };
 }
@@ -3754,36 +3787,49 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
     CallInformation locations = wasmCallingConvention().callInformationFor(signature);
     m_code.requestCallArgAreaSizeInBytes(WTF::roundUpToMultipleOf(stackAlignmentBytes(), locations.headerAndArgumentStackSizeInBytes));
 
+    ASSERT(locations.params.size() == args.size());
+    ASSERT(locations.results.size() == results.size());
+
     size_t offset = patchArgs.size();
     size_t argConstraints = args.size();
 #if USE(JSVALUE32_64)
     for (unsigned i = 0; i < args.size(); ++i) {
         if (args[i].type().isI64() && locations.params[i].isGPR())
             ++argConstraints;
-        }
+    }
 #endif
     Checked<size_t> newSize = checkedSum<size_t>(patchArgs.size(), argConstraints);
     RELEASE_ASSERT(!newSize.hasOverflowed());
 
     patchArgs.grow(newSize);
-    for (unsigned i = 0; i < argConstraints;) {
+    unsigned j = 0;
+    for (unsigned i = 0; i < args.size(); ++i) {
+        const TypedTmp& arg = args[i];
+        ValueLocation& loc = locations.params[i];
 #if USE(JSVALUE32_64)
-        if (args[i].type().isI64() && locations.params[i].isGPR()) {
-            patchArgs[i + offset] = ConstrainedTmp(args[i].lo(), B3::ValueRep(locations.params[i].jsr().payloadGPR()));
-            patchArgs[i + 1 + offset] = ConstrainedTmp(args[i].hi(), B3::ValueRep(locations.params[i].jsr().tagGPR()));
-            i += 2;
+        if (arg.type().isI64() && loc.isGPR()) {
+            patchArgs[offset + j++] = ConstrainedTmp(arg.lo(), B3::ValueRep(loc.jsr().payloadGPR()));
+            patchArgs[offset + j++] = ConstrainedTmp(arg.hi(), B3::ValueRep(loc.jsr().tagGPR()));
             continue;
         }
 #endif
-        patchArgs[i + offset] = ConstrainedTmp(args[i], locations.params[i]);
-        i += 1;
+        patchArgs[offset + j++] = ConstrainedTmp(arg, loc);
     }
+    ASSERT(j == argConstraints);
 
     if (patchpoint->type() != B3::Void) {
         Vector<B3::ValueRep, 1> resultConstraints;
-        for (auto valueLocation : locations.results) {
-//            ASSERT(!valueLocation.isGPR());
-            resultConstraints.append(B3::ValueRep(valueLocation));
+        for (unsigned i = 0; i < results.size(); ++i) {
+            const TypedTmp& result = results[i];
+            ValueLocation& loc = locations.results[i];
+#if USE(JSVALUE32_64)
+            if (result.type().isI64() && loc.isGPR()) {
+                resultConstraints.append(B3::ValueRep(loc.jsr().payloadGPR()));
+                resultConstraints.append(B3::ValueRep(loc.jsr().tagGPR()));
+                continue;
+            }
+#endif
+            resultConstraints.append(B3::ValueRep(loc));
         }
         patchpoint->resultConstraints = WTFMove(resultConstraints);
     }
@@ -4052,7 +4098,7 @@ auto AirIRGenerator::emitIndirectCall(TypedTmp calleeInstance, ExpressionType ca
             jit.cageConditionallyAndUntag(Gigacage::Primitive, baseMemory, pinnedRegs.boundsCheckingSizeRegister, scratch);
         });
 
-        emitPatchpoint(doContextSwitch, patchpoint, Tmp(), calleeInstance, currentInstance);
+        emitPatchpoint(doContextSwitch, patchpoint, TypedTmp(), calleeInstance, currentInstance);
         append(doContextSwitch, Jump);
         doContextSwitch->setSuccessors(continuation);
 
@@ -5540,7 +5586,17 @@ template<> auto AirIRGenerator::addOp<OpType::I64GeU>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::I64Mul>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g64();
+#if USE(JSVALUE64)
     append(Mul64, arg0, arg1, result);
+#elif USE(JSVALUE32_64)
+    auto tmpHiLo = g32();
+    auto tmpLoHi = g32();
+    append(Mul32, arg0.hi(), arg1.lo(), tmpHiLo);
+    append(Mul32, arg0.lo(), arg1.hi(), tmpLoHi);
+    append(UMull32, arg0.lo(), arg1.lo(), result.hi(),  result.lo());
+    append(Add32, tmpHiLo, result.hi());
+    append(Add32, tmpLoHi, result.hi());
+#endif
     return { };
 }
 
