@@ -68,7 +68,7 @@ bool CCallCustom::isValidForm(Inst& inst)
     size_t resultCount = cCallResultCount(value);
     size_t expectedArgCount = resultCount;
     for (Value* child : value->children()) {
-        ASSERT(child->type() != Tuple);
+        ASSERT_UNUSED(child, child->type() != Tuple);
 #if USE(JSVALUE32_64)
         if (child->type() == Int64) {
             expectedArgCount += 2;
