@@ -106,7 +106,9 @@ void lowerMacros(Code& code)
 
                 // Save where the original instruction put its result.
                 Arg resultDst0 = resultCount >= 1 ? inst.args[1] : Arg();
+#if USE(JSVALUE32_64)
                 Arg resultDst1 = resultCount >= 2 ? inst.args[2] : Arg();
+#endif
 
                 inst = buildCCall(code, inst.origin, destinations);
                 if (oldKind.effects)
