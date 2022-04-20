@@ -662,8 +662,12 @@ private:
         OP_LDRH_imm_T2  = 0xF8B0,
         OP_STR_imm_T3   = 0xF8C0,
         OP_LDR_imm_T3   = 0xF8D0,
+        OP_LDRSB_imm_T2 = 0xF910,
         OP_LDRSB_reg_T2 = 0xF910,
+        OP_LDRSH_imm_T2 = 0xF930,
         OP_LDRSH_reg_T2 = 0xF930,
+        OP_LDRSB_imm_T1 = 0xF990,
+        OP_LDRSH_imm_T1 = 0xF9B0,
         OP_LSL_reg_T2   = 0xFA00,
         OP_LSR_reg_T2   = 0xFA20,
         OP_ASR_reg_T2   = 0xFA40,
@@ -1266,7 +1270,38 @@ public:
         else
             m_formatter.twoWordOp12Reg4FourFours(OP_LDRB_reg_T2, rn, FourFours(rt, 0, shift, rm));
     }
-    
+
+    void ldrsb(RegisterID rt, RegisterID rn, ARMThumbImmediate imm)
+    {
+        ASSERT(rt != ARMRegisters::sp);
+        ASSERT(rn != ARMRegisters::pc); // LDR (literal)
+        ASSERT(imm.isUInt12());
+
+        m_formatter.twoWordOp12Reg4Reg4Imm12(OP_LDRSB_imm_T1, rn, rt, imm.getUInt12());
+    }
+
+    void ldrsb(RegisterID rt, RegisterID rn, int offset, bool index, bool wback)
+    {
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc); // LDR (literal)
+        ASSERT(index || wback);
+        ASSERT(!wback | (rt != rn));
+
+        bool add = true;
+        if (offset < 0) {
+            add = false;
+            offset = -offset;
+        }
+        ASSERT(!(offset & ~0xff));
+
+        offset |= (wback << 8);
+        offset |= (add   << 9);
+        offset |= (index << 10);
+        offset |= (1 << 11);
+
+        m_formatter.twoWordOp12Reg4Reg4Imm12(OP_LDRSB_imm_T2, rn, rt, offset);
+    }
+
     void ldrsb(RegisterID rt, RegisterID rn, RegisterID rm, unsigned shift = 0)
     {
         ASSERT(rn != ARMRegisters::pc);
@@ -1277,6 +1312,37 @@ public:
             m_formatter.oneWordOp7Reg3Reg3Reg3(OP_LDRSB_reg_T1, rm, rn, rt);
         else
             m_formatter.twoWordOp12Reg4FourFours(OP_LDRSB_reg_T2, rn, FourFours(rt, 0, shift, rm));
+    }
+
+    void ldrsh(RegisterID rt, RegisterID rn, ARMThumbImmediate imm)
+    {
+        ASSERT(rt != ARMRegisters::sp);
+        ASSERT(rn != ARMRegisters::pc); // LDR (literal)
+        ASSERT(imm.isUInt12());
+
+        m_formatter.twoWordOp12Reg4Reg4Imm12(OP_LDRSH_imm_T1, rn, rt, imm.getUInt12());
+    }
+
+    void ldrsh(RegisterID rt, RegisterID rn, int offset, bool index, bool wback)
+    {
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc); // LDR (literal)
+        ASSERT(index || wback);
+        ASSERT(!wback | (rt != rn));
+
+        bool add = true;
+        if (offset < 0) {
+            add = false;
+            offset = -offset;
+        }
+        ASSERT((offset & ~0xff) == 0);
+
+        offset |= (wback << 8);
+        offset |= (add   << 9);
+        offset |= (index << 10);
+        offset |= (1 << 11);
+
+        m_formatter.twoWordOp12Reg4Reg4Imm12(OP_LDRSH_imm_T2, rn, rt, offset);
     }
 
     void ldrsh(RegisterID rt, RegisterID rn, RegisterID rm, unsigned shift = 0)

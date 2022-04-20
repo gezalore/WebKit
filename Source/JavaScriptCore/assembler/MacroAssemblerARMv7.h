@@ -752,13 +752,21 @@ private:
     
     void load16SignedExtendTo32(ArmAddress address, RegisterID dest)
     {
-        ASSERT(address.type == ArmAddress::HasIndex);
         if (dest == addressTempRegister)
             invalidateCachedAddressTempRegister();
         else if (dest == dataTempRegister)
             cachedDataTempRegister().invalidate();
 
-        m_assembler.ldrsh(dest, address.base, address.u.index, address.u.scale);
+        if (address.type == ArmAddress::HasIndex)
+            m_assembler.ldrsh(dest, address.base, address.u.index, address.u.scale);
+        else if (address.u.offset >= 0) {
+            ARMThumbImmediate armImm = ARMThumbImmediate::makeUInt12(address.u.offset);
+            ASSERT(armImm.isValid());
+            m_assembler.ldrsh(dest, address.base, armImm);
+        } else {
+            ASSERT(address.u.offset >= -255);
+            m_assembler.ldrsh(dest, address.base, address.u.offset, true, false);
+        }
     }
 
     void load8(ArmAddress address, RegisterID dest)
@@ -782,13 +790,21 @@ private:
     
     void load8SignedExtendTo32(ArmAddress address, RegisterID dest)
     {
-        ASSERT(address.type == ArmAddress::HasIndex);
         if (dest == addressTempRegister)
             invalidateCachedAddressTempRegister();
         else if (dest == dataTempRegister)
             cachedDataTempRegister().invalidate();
 
-        m_assembler.ldrsb(dest, address.base, address.u.index, address.u.scale);
+        if (address.type == ArmAddress::HasIndex)
+            m_assembler.ldrsb(dest, address.base, address.u.index, address.u.scale);
+        else if (address.u.offset >= 0) {
+            ARMThumbImmediate armImm = ARMThumbImmediate::makeUInt12(address.u.offset);
+            ASSERT(armImm.isValid());
+            m_assembler.ldrsb(dest, address.base, armImm);
+        } else {
+            ASSERT(address.u.offset >= -255);
+            m_assembler.ldrsb(dest, address.base, address.u.offset, true, false);
+        }
     }
 
 protected:
@@ -886,9 +902,9 @@ public:
         load8(setupArmAddress(address), dest);
     }
 
-    void load8SignedExtendTo32(Address, RegisterID)
+    void load8SignedExtendTo32(Address address, RegisterID dest)
     {
-        UNREACHABLE_FOR_PLATFORM();
+        load8SignedExtendTo32(setupArmAddress(address), dest);
     }
 
     void load8(BaseIndex address, RegisterID dest)
@@ -932,9 +948,9 @@ public:
         }
     }
     
-    void load16SignedExtendTo32(Address, RegisterID)
+    void load16SignedExtendTo32(Address address, RegisterID dest)
     {
-        UNREACHABLE_FOR_PLATFORM();
+        load16SignedExtendTo32(setupArmAddress(address), dest);
     }
 
     void loadPair32(RegisterID src, RegisterID dest1, RegisterID dest2)
