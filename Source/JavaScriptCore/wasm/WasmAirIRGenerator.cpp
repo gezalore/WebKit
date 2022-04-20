@@ -2261,35 +2261,56 @@ inline void AirIRGenerator::emitStoreOp(StoreOpType op, ExpressionType pointer, 
     TypedTmp immTmp;
     TypedTmp newPtr;
 
-    Arg addrArg;
-    if (Arg::isValidAddrForm(offset, B3::widthForBytes(sizeOfStoreOp(op))))
-        addrArg = Arg::addr(pointer, offset);
-    else {
-        immTmp = g64();
-        newPtr = g64();
-        append(Move, Arg::bigImm(offset), immTmp);
-        append(Add64, immTmp, pointer, newPtr);
-        addrArg = Arg::addr(newPtr);
-    }
+    auto getAddr = [&](uint32_t offset) {
+        if (Arg::isValidAddrForm(offset, B3::widthForBytes(sizeOfStoreOp(op))))
+            return Arg::addr(pointer, offset);
+        else {
+            immTmp = gPtr();
+            newPtr = gPtr();
+            append(Move, Arg::bigImm(offset), immTmp);
+            append(is64Bit() ? Add64 : Add32, immTmp, pointer, newPtr);
+            return Arg::addr(newPtr);
+        }
+    };
+
+    Arg addrArg = getAddr(offset);
 
     switch (op) {
     case StoreOpType::I64Store8:
+#if USE(JSVALUE32_64)
+        append(Store8, value.lo(), addrArg);
+        return;
+#endif
     case StoreOpType::I32Store8:
         append(Store8, value, addrArg);
         return;
 
     case StoreOpType::I64Store16:
+#if USE(JSVALUE32_64)
+        append(Store16, value.lo(), addrArg);
+        return;
+#endif
     case StoreOpType::I32Store16:
         append(Store16, value, addrArg);
         return;
 
     case StoreOpType::I64Store32:
+#if USE(JSVALUE32_64)
+        append(Move, value.lo(), addrArg);
+        return;
+#endif
     case StoreOpType::I32Store:
         append(Move32, value, addrArg);
         return;
 
     case StoreOpType::I64Store:
+#if USE(JSVALUE64)
         append(Move, value, addrArg);
+#elif USE(JSVALUE32_64)
+        // Might be unaligned so can't use StorePair32
+        append(Move, value.lo(), addrArg);
+        append(Move, value.hi(), getAddr(offset + 4));
+#endif
         return;
 
     case StoreOpType::F32Store:
