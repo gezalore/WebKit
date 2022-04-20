@@ -1662,27 +1662,20 @@ auto AirIRGenerator::addGrowMemory(ExpressionType delta, ExpressionType& result)
 
 auto AirIRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
 {
-#if USE(JSVALUE64)
-    static_assert(sizeof(std::declval<Memory*>()->size()) == sizeof(uint64_t), "codegen relies on this size");
+    auto temp1 = gPtr();
+    auto temp2 = gPtr();
 
-    auto temp1 = g64();
-    auto temp2 = g64();
-
-    RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfMemory(), B3::Width64));
-    RELEASE_ASSERT(Arg::isValidAddrForm(Memory::offsetOfHandle(), B3::Width64));
-    RELEASE_ASSERT(Arg::isValidAddrForm(MemoryHandle::offsetOfSize(), B3::Width64));
+    RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfMemory(), B3::pointerWidth()));
+    RELEASE_ASSERT(Arg::isValidAddrForm(Memory::offsetOfHandle(), B3::pointerWidth()));
+    RELEASE_ASSERT(Arg::isValidAddrForm(MemoryHandle::offsetOfSize(), B3::pointerWidth()));
     append(Move, Arg::addr(instanceValue(), Instance::offsetOfMemory()), temp1);
     append(Move, Arg::addr(temp1, Memory::offsetOfHandle()), temp1);
     append(Move, Arg::addr(temp1, MemoryHandle::offsetOfSize()), temp1);
     constexpr uint32_t shiftValue = 16;
     static_assert(PageCount::pageSize == 1ull << shiftValue, "This must hold for the code below to be correct.");
     append(Move, Arg::imm(16), temp2);
-    addShift(Types::I32, Urshift64, temp1, temp2, result);
+    addShift(Types::I32, is64Bit() ? Urshift64 : Urshift32, temp1, temp2, result);
     append(Move32, result, result);
-#elif USE(JSVALUE32_64)
-    UNUSED_PARAM(result);
-    UNREACHABLE_FOR_PLATFORM();
-#endif
 
     return { };
 }
