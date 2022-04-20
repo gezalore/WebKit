@@ -1076,7 +1076,11 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
             jit.addLinkTask([compilation, moveLocation] (LinkBuffer& linkBuffer) {
                 compilation->calleeMoveLocations.append(linkBuffer.locationOf<WasmEntryPtrTag>(moveLocation));
             });
-            jit.emitPutToCallFrameHeader(calleeGPR, CallFrameSlot::callee);
+            CCallHelpers::Address calleeSlot { GPRInfo::callFrameRegister, CallFrameSlot::callee * sizeof(Register) };
+            jit.storePtr(calleeGPR, calleeSlot.withOffset(PayloadOffset));
+#if USE(JSVALUE32_64)
+            jit.store32(CCallHelpers::TrustedImm32(JSValue::WasmTag), calleeSlot.withOffset(TagOffset));
+#endif
             jit.emitPutToCallFrameHeader(nullptr, CallFrameSlot::codeBlock);
         }
 
