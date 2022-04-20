@@ -995,10 +995,10 @@ int32_t AirIRGenerator::fixupPointerPlusOffset(ExpressionType& ptr, uint32_t off
 {
     if (static_cast<uint64_t>(offset) > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
         auto previousPtr = ptr;
-        ptr = g64();
-        auto constant = g64();
+        ptr = gPtr();
+        auto constant = gPtr();
         append(Move, Arg::bigImm(offset), constant);
-        append(Add64, constant, previousPtr, ptr);
+        append(is64Bit() ? Add64 : Add32, constant, previousPtr, ptr);
         return 0;
     }
     return offset;
@@ -1942,23 +1942,35 @@ inline void AirIRGenerator::emitWriteBarrierForJSWrapper()
 
 inline AirIRGenerator::ExpressionType AirIRGenerator::emitCheckAndPreparePointer(ExpressionType pointer, uint32_t offset, uint32_t sizeOfOperation)
 {
+#if CPU(ARM_THUMB2)
+    auto memoryBase = gPtr();
+    append(Move, Arg::addr(instanceValue(), Instance::offsetOfCachedMemory()), memoryBase);
+#else
     ASSERT(m_memoryBaseGPR);
+    Tmp memoryBase { m_memoryBaseGPR };
+#endif
 
-    auto result = g64();
+    auto result = gPtr();
     append(Move32, pointer, result);
 
     switch (m_mode) {
     case MemoryMode::BoundsChecking: {
         // In bound checking mode, while shared wasm memory partially relies on signal handler too, we need to perform bound checking
         // to ensure that no memory access exceeds the current memory size.
+#if CPU(ARM_THUMB2)
+        auto boundsCheckingSize = gPtr();
+        append(Move, Arg::addr(instanceValue(), Instance::offsetOfCachedBoundsCheckingSize()), boundsCheckingSize);
+#else
         ASSERT(m_boundsCheckingSizeGPR);
+        Tmp boundsCheckingSize { m_boundsCheckingSizeGPR };
+#endif
         ASSERT(sizeOfOperation + offset > offset);
-        auto temp = g64();
+        auto temp = gPtr();
         append(Move, Arg::bigImm(static_cast<uint64_t>(sizeOfOperation) + offset - 1), temp);
-        append(Add64, result, temp);
+        append(is64Bit() ? Add64 : Add32, result, temp);
 
         emitCheck([&] {
-            return Inst(Branch64, nullptr, Arg::relCond(MacroAssembler::AboveOrEqual), temp, Tmp(m_boundsCheckingSizeGPR));
+            return Inst(is64Bit() ? Branch64 : Branch32, nullptr, Arg::relCond(MacroAssembler::AboveOrEqual), temp, boundsCheckingSize);
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
@@ -1995,7 +2007,7 @@ inline AirIRGenerator::ExpressionType AirIRGenerator::emitCheckAndPreparePointer
 #endif
     }
 
-    append(Add64, Tmp(m_memoryBaseGPR), result);
+    append(is64Bit() ? Add64 : Add32, memoryBase, result);
     return result;
 }
 
@@ -2032,16 +2044,19 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
     TypedTmp newPtr;
     TypedTmp result;
 
-    Arg addrArg;
-    if (Arg::isValidAddrForm(offset, B3::widthForBytes(sizeOfLoadOp(op))))
-        addrArg = Arg::addr(pointer, offset);
-    else {
-        immTmp = g64();
-        newPtr = g64();
-        append(Move, Arg::bigImm(offset), immTmp);
-        append(Add64, immTmp, pointer, newPtr);
-        addrArg = Arg::addr(newPtr);
-    }
+    auto getAddr = [&](uint32_t offset) {
+        if (Arg::isValidAddrForm(offset, B3::widthForBytes(sizeOfLoadOp(op))))
+            return Arg::addr(pointer, offset);
+        else {
+            immTmp = gPtr();
+            newPtr = gPtr();
+            append(Move, Arg::bigImm(offset), immTmp);
+            append(is64Bit() ? Add64 : Add32, immTmp, pointer, newPtr);
+            return Arg::addr(newPtr);
+        }
+    };
+
+    Arg addrArg = getAddr(offset);
 
     switch (op) {
     case LoadOpType::I32Load8S: {
@@ -2052,8 +2067,13 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
 
     case LoadOpType::I64Load8S: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Load8SignedExtendTo32, addrArg, result);
         append(SignExtend32ToPtr, result, result);
+#elif USE(JSVALUE32_64)
+        appendEffectful(Load8SignedExtendTo32, addrArg, result.lo());
+        append(Rshift32, result.lo(), Arg::imm(31), result.hi());
+#endif
         break;
     }
 
@@ -2065,7 +2085,12 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
 
     case LoadOpType::I64Load8U: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Load8, addrArg, result);
+#elif USE(JSVALUE32_64)
+        appendEffectful(Load8, addrArg, result.lo());
+        append(Move, Arg::imm(0), result.hi());
+#endif
         break;
     }
 
@@ -2077,8 +2102,13 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
 
     case LoadOpType::I64Load16S: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Load16SignedExtendTo32, addrArg, result);
         append(SignExtend32ToPtr, result, result);
+#elif USE(JSVALUE32_64)
+        appendEffectful(Load16SignedExtendTo32, addrArg, result.lo());
+        append(Rshift32, result.lo(), Arg::imm(31), result.hi());
+#endif
         break;
     }
 
@@ -2090,7 +2120,12 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
 
     case LoadOpType::I64Load16U: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Load16, addrArg, result);
+#elif USE(JSVALUE32_64)
+        appendEffectful(Load16, addrArg, result.lo());
+        append(Move, Arg::imm(0), result.hi());
+#endif
         break;
     }
 
@@ -2101,20 +2136,36 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
 
     case LoadOpType::I64Load32U: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Move32, addrArg, result);
+#elif USE(JSVALUE32_64)
+        appendEffectful(Move, addrArg, result.lo());
+        append(Move, Arg::imm(0), result.hi());
+#endif
         break;
     }
 
     case LoadOpType::I64Load32S: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Move32, addrArg, result);
         append(SignExtend32ToPtr, result, result);
+#elif USE(JSVALUE32_64)
+        appendEffectful(Move32, addrArg, result.lo());
+        append(Rshift32, result.lo(), Arg::imm(31), result.hi());
+#endif
         break;
     }
 
     case LoadOpType::I64Load: {
         result = g64();
+#if USE(JSVALUE64)
         appendEffectful(Move, addrArg, result);
+#elif USE(JSVALUE32_64)
+        // Might be unaligned so can't use LoadPair32
+        appendEffectful(Move, addrArg, result.lo());
+        appendEffectful(Move, getAddr(offset + 4), result.hi());
+#endif
         break;
     }
 
