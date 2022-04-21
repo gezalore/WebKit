@@ -198,6 +198,9 @@ arm64: Sub64 U:G:64, U:G:64, D:G:64
     Tmp, Tmp, Tmp
     Tmp, Imm, Tmp
 
+32: Sub64 U:G:32, U:G:32, U:G:32, U:G:32, D:G:32, D:G:32
+    Tmp, Tmp, Tmp, Tmp, Tmp, Tmp
+
 SubDouble U:F:64, U:F:64, D:F:64
     arm: Tmp, Tmp, Tmp
     x86: Tmp, Addr, Tmp
@@ -371,6 +374,7 @@ Lea32 UA:G:32, D:G:32
 And32 U:G:32, U:G:32, ZD:G:32
     Tmp, Tmp, Tmp
     arm64: BitImm, Tmp, Tmp
+    32:  Imm, Tmp, Tmp
     x86: Tmp, Addr, Tmp
     x86: Addr, Tmp, Tmp
 
@@ -1450,6 +1454,7 @@ BranchTest8 U:G:32, U:G:8, U:G:8 /branch
 BranchTest32 U:G:32, U:G:32, U:G:32 /branch
     ResCond, Tmp, Tmp
     ResCond, Tmp, BitImm
+    32: ResCond, Tmp, Imm
     x86: ResCond, Addr, BitImm
     x86: ResCond, Index, BitImm
 

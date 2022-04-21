@@ -3431,7 +3431,11 @@ auto B3IRGenerator::addOp<OpType::I64Ctz>(ExpressionType argVar, ExpressionType&
     PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
     patchpoint->append(arg, ValueRep::SomeRegister);
     patchpoint->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
+#if USE(JSVALUE64)
         jit.countTrailingZeros64(params[1].gpr(), params[0].gpr());
+#elif USE(JSVALUE32_64)
+        UNREACHABLE_FOR_PLATFORM();
+#endif
     });
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
