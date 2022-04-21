@@ -654,6 +654,12 @@ public:
         store32(dataTempRegister, address.m_ptr);
     }
 
+    void sub64(RegisterID leftHi, RegisterID leftLo, RegisterID rightHi, RegisterID rightLo, RegisterID destHi, RegisterID destLo)
+    {
+        m_assembler.sub_S(destLo, leftLo, rightLo);
+        m_assembler.sbc(destHi, leftHi, rightHi);
+    }
+
     void xor32(RegisterID op1, RegisterID op2, RegisterID dest)
     {
         m_assembler.eor(dest, op1, op2);
@@ -2953,7 +2959,6 @@ public:
     void truncateDoubleToInt64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void truncateDoubleToUint64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void truncateDoubleToUint64(FPRegisterID, RegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void countTrailingZeros64(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void convertUInt64ToDouble(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void convertUInt64ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
 
