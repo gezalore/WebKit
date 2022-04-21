@@ -484,6 +484,11 @@ public:
     std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> WARN_UNUSED_RETURN emitCallPatchpoint(BasicBlock*, const TypeDefinition&, const ResultList& results, const Vector<TypedTmp>& args, Vector<ConstrainedTmp> extraArgs = { });
 
     PartialResult addShift(Type, B3::Air::Opcode, ExpressionType value, ExpressionType shift, ExpressionType& result);
+#if USE(JSVALUE32_64)
+    PartialResult addShift64(B3::Air::Opcode op, ExpressionType value, ExpressionType shift, ExpressionType& result);
+    PartialResult addRotate64(B3::Air::Opcode op, ExpressionType value, ExpressionType shift, ExpressionType& result);
+#endif
+    PartialResult addCompare(Type, MacroAssembler::RelationalCondition, ExpressionType lhs, ExpressionType rhs, ExpressionType& result);
     PartialResult addIntegerSub(B3::Air::Opcode, ExpressionType lhs, ExpressionType rhs, ExpressionType& result);
     PartialResult addFloatingPointAbs(B3::Air::Opcode, ExpressionType value, ExpressionType& result);
     PartialResult addFloatingPointBinOp(Type, B3::Air::Opcode, ExpressionType lhs, ExpressionType rhs, ExpressionType& result);
@@ -4307,11 +4312,29 @@ void AirIRGenerator::emitChecksForModOrDiv(bool isSignedDiv, ExpressionType left
 {
     static_assert(sizeof(IntType) == 4 || sizeof(IntType) == 8);
 
-    emitCheck([&] {
-        return Inst(sizeof(IntType) == 4 ? BranchTest32 : BranchTest64, nullptr, Arg::resCond(MacroAssembler::Zero), right, right);
-    }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
-        this->emitThrowException(jit, ExceptionType::DivisionByZero);
-    });
+    {
+        BasicBlock* continuation = nullptr;
+        emitCheck([&, this] {
+        if constexpr (sizeof(IntType) == 4)
+            return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::Zero), right, right);
+        else {
+#if USE(JSVALUE64)
+             return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::Zero), right, right);
+#elif USE(JSVALUE32_64)
+            BasicBlock* checkLo = m_code.addBlock();
+            continuation = m_code.addBlock();
+            append(BranchTest32, Arg::resCond(MacroAssembler::NonZero), right.hi(), right.hi());
+            m_currentBlock->setSuccessors(continuation, checkLo);
+            m_currentBlock = checkLo;
+            return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::Zero), right.lo(), right.lo());
+#endif
+        } }, [=, this](CCallHelpers& jit, const B3::StackmapGenerationParams&) { this->emitThrowException(jit, ExceptionType::DivisionByZero); });
+        if (continuation) {
+            append(Jump);
+            m_currentBlock->setSuccessors(continuation);
+            m_currentBlock = continuation;
+        }
+    }
 
     if (isSignedDiv) {
         ASSERT(std::is_signed<IntType>::value);
@@ -4319,18 +4342,20 @@ void AirIRGenerator::emitChecksForModOrDiv(bool isSignedDiv, ExpressionType left
 
         // FIXME: Better isel for compare with imms here.
         // https://bugs.webkit.org/show_bug.cgi?id=193999
-        auto minTmp = sizeof(IntType) == 4 ? g32() : g64();
-        auto negOne = sizeof(IntType) == 4 ? g32() : g64();
 
-        B3::Air::Opcode op = sizeof(IntType) == 4 ? Compare32 : Compare64;
-        append(Move, Arg::bigImm(static_cast<uint64_t>(min)), minTmp);
-        append(op, Arg::relCond(MacroAssembler::Equal), left, minTmp, minTmp);
+        ExpressionType badLeft;
+        ExpressionType badRight;
+        {
+            Type type = sizeof(IntType) == 4 ? Types::I32 : Types::I64;
 
-        append(Move, Arg::isValidImmForm(-1) ? Arg::imm(-1) : Arg::bigImm(-1) , negOne);
-        append(op, Arg::relCond(MacroAssembler::Equal), right, negOne, negOne);
+            auto minTmp = addConstant(type, static_cast<uint64_t>(min));
+            addCompare(sizeof(IntType) == 4 ? Types::I32 : Types::I64, MacroAssembler::Equal, left, minTmp, badLeft);
+            auto negOne = addConstant(type, static_cast<uint64_t>(-1));
+            addCompare(sizeof(IntType) == 4 ? Types::I32 : Types::I64, MacroAssembler::Equal, right, negOne, badRight);
+        }
 
         emitCheck([&] {
-            return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::NonZero), minTmp, negOne);
+            return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::NonZero), badLeft, badRight);
         },
         [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::IntegerOverflow);
@@ -4547,6 +4572,7 @@ auto AirIRGenerator::addOp<OpType::I32Ctz>(ExpressionType arg, ExpressionType& r
 template<>
 auto AirIRGenerator::addOp<OpType::I64Ctz>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
+#if USE(JSVALUE64)
     auto* patchpoint = addPatchpoint(B3::Int64);
     patchpoint->effects = B3::Effects::none();
     patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
@@ -4554,6 +4580,22 @@ auto AirIRGenerator::addOp<OpType::I64Ctz>(ExpressionType arg, ExpressionType& r
     });
     result = g64();
     emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    auto* patchpoint = addPatchpoint(B3::Int32);
+    patchpoint->effects = B3::Effects::none();
+    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+        auto countHi = jit.branchTest32(MacroAssembler::Zero, params[1].gpr(), params[1].gpr());
+        jit.countTrailingZeros32(params[1].gpr(), params[0].gpr());
+        auto continuation = jit.jump();
+        countHi.link(&jit);
+        jit.countTrailingZeros32(params[2].gpr(), params[0].gpr());
+        jit.add32(CCallHelpers::TrustedImm32(32), params[0].gpr());
+        continuation.link(&jit);
+    });
+    result = g64();
+    emitPatchpoint(patchpoint, TypedTmp { result.lo(), Types::I32 }, TypedTmp { arg.lo(), Types::I32 }, TypedTmp { arg.hi(), Types::I32 });
+    append(Move, Arg::imm(0), result.hi());
+#endif
     return { };
 }
 
@@ -4978,6 +5020,15 @@ auto AirIRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType arg, ExpressionT
 auto AirIRGenerator::addShift(Type type, B3::Air::Opcode op, ExpressionType value, ExpressionType shift, ExpressionType& result) -> PartialResult
 {
     ASSERT(type.isI64() || type.isI32());
+
+#if USE(JSVALUE32_64)
+    if (type.isI64()) {
+        if (op == RotateRight64 || op == RotateLeft64)
+            return addRotate64(op, value, shift, result);
+        return addShift64(op, value, shift, result);
+    }
+#endif
+
     result = tmpForType(type);
 
     if (isValidForm(op, Arg::Tmp, Arg::Tmp, Arg::Tmp)) {
@@ -4996,11 +5047,210 @@ auto AirIRGenerator::addShift(Type type, B3::Air::Opcode op, ExpressionType valu
     return { };
 }
 
+#if USE(JSVALUE32_64)
+auto AirIRGenerator::addShift64(B3::Air::Opcode op, ExpressionType value, ExpressionType shift, ExpressionType& result) -> PartialResult
+{
+    ASSERT(op == Rshift64 || op == Urshift64 || op == Lshift64);
+
+    result = g64();
+
+    BasicBlock* check = m_code.addBlock();
+    BasicBlock* aboveOrEquals32 = m_code.addBlock();
+    BasicBlock* below32 = m_code.addBlock();
+    BasicBlock* continuation = m_code.addBlock();
+
+    auto tmpShift = g32();
+    append(Move, shift.lo(), tmpShift);
+    append(Move, value.hi(), result.hi());
+    append(Move, value.lo(), result.lo());
+    append(And32, Arg::imm(63), tmpShift, tmpShift);
+    append(BranchTest32, Arg::resCond(MacroAssembler::Zero), tmpShift, tmpShift);
+    m_currentBlock->setSuccessors(continuation, check);
+    m_currentBlock = check;
+
+    append(Branch32, Arg::relCond(MacroAssembler::Below), tmpShift, Arg::imm(32));
+    m_currentBlock->setSuccessors(below32, aboveOrEquals32);
+    m_currentBlock = aboveOrEquals32;
+
+    append(Sub32, tmpShift, Arg::imm(32), tmpShift);
+    if (op == Rshift64) {
+        append(Rshift32, value.hi(), tmpShift, result.lo());
+        append(Rshift32, value.hi(), Arg::imm(31), result.hi());
+    } else if (op == Urshift64) {
+        append(Urshift32, value.hi(), tmpShift, result.lo());
+        append(Move, Arg::imm(0), result.hi());
+    } else { // Lshift64
+        append(Lshift32, value.lo(), tmpShift, result.hi());
+        append(Move, Arg::imm(0), result.lo());
+    }
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = below32;
+
+    auto tmpComplementShift = g32();
+    append(Move, Arg::imm(32), tmpComplementShift);
+    append(Sub32, tmpShift, tmpComplementShift);
+    if (op == Rshift64) {
+        append(Urshift32, value.lo(), tmpShift, result.lo());
+        append(Lshift32, value.hi(), tmpComplementShift, tmpComplementShift);
+        append(Or32, tmpComplementShift, result.lo());
+        append(Rshift32, value.hi(), tmpShift, result.hi());
+    } else if (op == Urshift64) {
+        append(Urshift32, value.lo(), tmpShift, result.lo());
+        append(Lshift32, value.hi(), tmpComplementShift, tmpComplementShift);
+        append(Or32, tmpComplementShift, result.lo());
+        append(Urshift32, value.hi(), tmpShift, result.hi());
+    } else { // Lshift64
+        append(Lshift32, value.hi(), tmpShift, result.hi());
+        append(Urshift32, value.lo(), tmpComplementShift, tmpComplementShift);
+        append(Or32, tmpComplementShift, result.hi());
+        append(Lshift32, value.lo(), tmpShift, result.lo());
+    }
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = continuation;
+
+    return { };
+}
+
+auto AirIRGenerator::addRotate64(B3::Air::Opcode op, ExpressionType value, ExpressionType shift, ExpressionType& result) -> PartialResult
+{
+    ASSERT(op == RotateRight64 || op == RotateLeft64);
+
+    result = g64();
+
+    BasicBlock* swap = m_code.addBlock();
+    BasicBlock* check = m_code.addBlock();
+    BasicBlock* rotate = m_code.addBlock();
+    BasicBlock* continuation = m_code.addBlock();
+
+    auto tmpArgLo = g32();
+    auto tmpArgHi = g32();
+    auto tmpShift = g32();
+    append(Move, value.lo(), tmpArgLo);
+    append(Move, value.hi(), tmpArgHi);
+    append(Move, shift.lo(), tmpShift);
+    append(BranchTest32, Arg::resCond(MacroAssembler::Zero), tmpShift, Arg::imm(0x20));
+    m_currentBlock->setSuccessors(check, swap);
+    m_currentBlock = swap;
+
+    append(Shuffle, tmpArgLo, tmpArgHi, Arg::widthArg(B3::Width32), tmpArgHi, tmpArgLo, Arg::widthArg(B3::Width32));
+    append(Jump);
+    m_currentBlock->setSuccessors(check);
+    m_currentBlock = check;
+
+    append(Move, tmpArgLo, result.lo());
+    append(Move, tmpArgHi, result.hi());
+    append(And32, Arg::imm(31), tmpShift, tmpShift);
+    append(BranchTest32, Arg::resCond(MacroAssembler::Zero), tmpShift, tmpShift);
+    m_currentBlock->setSuccessors(continuation, rotate);
+    m_currentBlock = rotate;
+
+    auto tmpComplementShift = g32();
+    auto tmpResLo = g32();
+    auto tmpResHi = g32();
+    append(Move, Arg::imm(32), tmpComplementShift);
+    append(Sub32, tmpShift, tmpComplementShift);
+    if (op == RotateRight64) {
+        append(Urshift32, tmpArgLo, tmpShift, result.lo());
+        append(Urshift32, tmpArgHi, tmpShift, result.hi());
+        append(Lshift32, tmpArgLo, tmpComplementShift, tmpResHi);
+        append(Lshift32, tmpArgHi, tmpComplementShift, tmpResLo);
+    } else { // RotateLeft64
+        append(Lshift32, tmpArgLo, tmpShift, result.lo());
+        append(Lshift32, tmpArgHi, tmpShift, result.hi());
+        append(Urshift32, tmpArgLo, tmpComplementShift, tmpResHi);
+        append(Urshift32, tmpArgHi, tmpComplementShift, tmpResLo);
+    }
+    append(Or32, tmpResLo, result.lo());
+    append(Or32, tmpResHi, result.hi());
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = continuation;
+
+    return { };
+}
+#endif
+
+auto AirIRGenerator::addCompare(Type type, MacroAssembler::RelationalCondition cond, ExpressionType lhs, ExpressionType rhs, ExpressionType& result) -> PartialResult
+{
+    ASSERT(type.isI32() || type.isI64());
+
+    result = g32();
+
+    if (type.isI32()) {
+        append(Compare32, Arg::relCond(cond), lhs, rhs, result);
+        return { };
+    }
+
+#if USE(JSVALUE64)
+    append(Compare64, Arg::relCond(cond), lhs, rhs, result);
+#elif USE(JSVALUE32_64)
+    BasicBlock* continuation = m_code.addBlock();
+    BasicBlock* compareLo = m_code.addBlock();
+
+    if (cond == MacroAssembler::Equal || cond == MacroAssembler::NotEqual) {
+        append(Move, Arg::imm(cond == MacroAssembler::NotEqual), result);
+        append(Branch32, Arg::relCond(MacroAssembler::NotEqual), lhs.hi(), rhs.hi());
+        m_currentBlock->setSuccessors(continuation, compareLo);
+        m_currentBlock = compareLo;
+
+        append(Compare32, Arg::relCond(cond), lhs.lo(), rhs.lo(), result);
+        append(Jump);
+        m_currentBlock->setSuccessors(continuation);
+        m_currentBlock = continuation;
+        return {};
+    }
+
+    BasicBlock* compareHi = m_code.addBlock();
+
+    append(Branch32, Arg::relCond(MacroAssembler::Equal), lhs.hi(), rhs.hi());
+    m_currentBlock->setSuccessors(compareLo, compareHi);
+    m_currentBlock = compareHi;
+
+    append(Compare32, Arg::relCond(cond), lhs.hi(), rhs.hi(), result);
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = compareLo;
+
+    // Signed to unsigned, leave the rest alone
+    switch (cond) {
+    case MacroAssembler::GreaterThan:
+        cond = MacroAssembler::Above;
+        break;
+    case MacroAssembler::LessThan:
+        cond = MacroAssembler::Below;
+        break;
+    case MacroAssembler::GreaterThanOrEqual:
+        cond = MacroAssembler::AboveOrEqual;
+        break;
+    case MacroAssembler::LessThanOrEqual:
+        cond = MacroAssembler::BelowOrEqual;
+        break;
+    default:
+        break;
+    }
+    append(Compare32, Arg::relCond(cond), lhs.lo(), rhs.lo(), result);
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = continuation;
+#endif
+
+    return { };
+}
+
 auto AirIRGenerator::addIntegerSub(B3::Air::Opcode op, ExpressionType lhs, ExpressionType rhs, ExpressionType& result) -> PartialResult
 {
     ASSERT(op == Sub32 || op == Sub64);
 
     result = op == Sub32 ? g32() : g64();
+
+#if USE(JSVALUE32_64)
+    if (op == Sub64) {
+        append(op, lhs.hi(), lhs.lo(), rhs.hi(), rhs.lo(), result.hi(), result.lo());
+        return { };
+    }
+#endif
 
     if (isValidForm(op, Arg::Tmp, Arg::Tmp, Arg::Tmp)) {
         append(op, lhs, rhs, result);
@@ -5252,7 +5502,12 @@ template<> auto AirIRGenerator::addOp<OpType::F32ReinterpretI32>(ExpressionType 
 template<> auto AirIRGenerator::addOp<OpType::I64And>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g64();
+#if USE(JSVALUE64)
     append(And64, arg0, arg1, result);
+#elif USE(JSVALUE32_64)
+    append(And32, arg0.lo(), arg1.lo(), result.lo());
+    append(And32, arg0.hi(), arg1.hi(), result.hi());
+#endif
     return { };
 }
 
@@ -5286,22 +5541,33 @@ template<> auto AirIRGenerator::addOp<OpType::F64Ge>(ExpressionType arg0, Expres
 
 template<> auto AirIRGenerator::addOp<OpType::I64GtS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::GreaterThan), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::GreaterThan, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64GtU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::Above), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::Above, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64Eqz>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = g32();
+#if USE(JSVALUE64)
     append(Test64, Arg::resCond(MacroAssembler::Zero), arg0, arg0, result);
+#elif USE(JSVALUE32_64)
+    BasicBlock* checkLo = m_code.addBlock();
+    BasicBlock* continuation = m_code.addBlock();
+
+    append(Move, Arg::imm(0), result);
+    append(BranchTest32, Arg::resCond(MacroAssembler::NonZero), arg0.hi(), arg0.hi());
+    m_currentBlock->setSuccessors(continuation, checkLo);
+    m_currentBlock = checkLo;
+
+    append(Test32, Arg::resCond(MacroAssembler::Zero), arg0.lo(), arg0.lo(), result);
+    append(Jump);
+    m_currentBlock->setSuccessors(continuation);
+    m_currentBlock = continuation;
+#endif
     return { };
 }
 
@@ -5320,35 +5586,50 @@ template<> auto AirIRGenerator::addOp<OpType::F32Add>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::I64Or>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g64();
+#if USE(JSVALUE64)
     append(Or64, arg0, arg1, result);
+#elif USE(JSVALUE32_64)
+    append(Or32, arg0.lo(), arg1.lo(), result.lo());
+    append(Or32, arg0.hi(), arg1.hi(), result.hi());
+#endif
     return { };
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I32LeU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::BelowOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::BelowOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I32LeS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::LessThanOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::LessThanOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64Ne>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::NotEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::NotEqual, arg0, arg1, result);
 }
 
-template<> auto AirIRGenerator::addOp<OpType::I64Clz>(ExpressionType arg0, ExpressionType& result) -> PartialResult
+template<> auto AirIRGenerator::addOp<OpType::I64Clz>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
+#if USE(JSVALUE64)
+    append(CountLeadingZeros64, arg, result);
+#elif USE(JSVALUE32_64)
+    auto* patchpoint = addPatchpoint(B3::Int32);
+    patchpoint->effects = B3::Effects::none();
+    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+        auto countLo = jit.branchTest32(MacroAssembler::Zero, params[2].gpr(), params[2].gpr());
+        jit.countLeadingZeros32(params[2].gpr(), params[0].gpr());
+        auto continuation = jit.jump();
+        countLo.link(&jit);
+        jit.countLeadingZeros32(params[1].gpr(), params[0].gpr());
+        jit.add32(CCallHelpers::TrustedImm32(32), params[0].gpr());
+        continuation.link(&jit);
+    });
     result = g64();
-    append(CountLeadingZeros64, arg0, result);
+    emitPatchpoint(patchpoint, TypedTmp { result.lo(), Types::I32 }, TypedTmp { arg.lo(), Types::I32 }, TypedTmp { arg.hi(), Types::I32 });
+    append(Move, Arg::imm(0), result.hi());
+#endif
     return { };
 }
 
@@ -5376,9 +5657,7 @@ template<> auto AirIRGenerator::addOp<OpType::I32And>(ExpressionType arg0, Expre
 
 template<> auto AirIRGenerator::addOp<OpType::I32LtU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::Below), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::Below, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64Rotr>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
@@ -5393,16 +5672,12 @@ template<> auto AirIRGenerator::addOp<OpType::F64Abs>(ExpressionType arg0, Expre
 
 template<> auto AirIRGenerator::addOp<OpType::I32LtS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::LessThan), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::LessThan, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I32Eq>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::Equal), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::Equal, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64Copysign>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
@@ -5521,9 +5796,7 @@ template<> auto AirIRGenerator::addOp<OpType::I32ShrS>(ExpressionType arg0, Expr
 
 template<> auto AirIRGenerator::addOp<OpType::I32GeU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::AboveOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::AboveOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64Ceil>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5539,9 +5812,7 @@ template<> auto AirIRGenerator::addOp<OpType::F64Ceil>(ExpressionType arg0, Expr
 
 template<> auto AirIRGenerator::addOp<OpType::I32GeS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::GreaterThanOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::GreaterThanOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I32Shl>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
@@ -5612,16 +5883,12 @@ template<> auto AirIRGenerator::addOp<OpType::I32Or>(ExpressionType arg0, Expres
 
 template<> auto AirIRGenerator::addOp<OpType::I64LtU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::Below), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::Below, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64LtS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::LessThan), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::LessThan, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64ConvertSI64>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5634,15 +5901,18 @@ template<> auto AirIRGenerator::addOp<OpType::F64ConvertSI64>(ExpressionType arg
 template<> auto AirIRGenerator::addOp<OpType::I64Xor>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     result = g64();
+#if USE(JSVALUE64)
     append(Xor64, arg0, arg1, result);
+#elif USE(JSVALUE32_64)
+    append(Xor32, arg0.lo(), arg1.lo(), result.lo());
+    append(Xor32, arg0.hi(), arg1.hi(), result.hi());
+#endif
     return { };
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64GeU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::AboveOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::AboveOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64Mul>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
@@ -5691,9 +5961,7 @@ template<> auto AirIRGenerator::addOp<OpType::F64Add>(ExpressionType arg0, Expre
 
 template<> auto AirIRGenerator::addOp<OpType::I64GeS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::GreaterThanOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::GreaterThanOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64ExtendUI32>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5705,10 +5973,8 @@ template<> auto AirIRGenerator::addOp<OpType::I64ExtendUI32>(ExpressionType arg0
 
 template<> auto AirIRGenerator::addOp<OpType::I32Ne>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
     RELEASE_ASSERT(arg0 && arg1);
-    append(Compare32, Arg::relCond(MacroAssembler::NotEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::NotEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64ReinterpretI64>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5727,24 +5993,7 @@ template<> auto AirIRGenerator::addOp<OpType::F32Eq>(ExpressionType arg0, Expres
 
 template<> auto AirIRGenerator::addOp<OpType::I64Eq>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-#if USE(JSVALUE64)
-    append(Compare64, Arg::relCond(MacroAssembler::Equal), arg0, arg1, result);
-#elif USE(JSVALUE32_64)
-    BasicBlock* checkLo = m_code.addBlock();
-    BasicBlock* continuation = m_code.addBlock();
-
-    append(Move, Arg::imm(0), result);
-    append(Branch32, Arg::relCond(MacroAssembler::NotEqual), arg0.hi(), arg1.hi());
-    m_currentBlock->setSuccessors(continuation, checkLo);
-    m_currentBlock = checkLo;
-
-    append(Compare32, Arg::relCond(MacroAssembler::Equal), arg0.lo(), arg1.lo(), result);
-    append(Jump);
-    m_currentBlock->setSuccessors(continuation);
-    m_currentBlock = continuation;
-#endif
-    return { };
+    return addCompare(Types::I64, MacroAssembler::Equal, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F32Floor>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5818,7 +6067,7 @@ template<> auto AirIRGenerator::addOp<OpType::I32WrapI64>(ExpressionType arg0, E
 template<> auto AirIRGenerator::addOp<OpType::I32Rotl>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
     if (isARM64() || isARM()) {
-        // ARMs do not have a rotate left.
+        // ARMs do not have a 'rotate left' instruction.
         auto newShift = isARM64() ? g64() : g32();
         append(Move, arg1, newShift);
         append(isARM64() ? Neg64 : Neg32, newShift);
@@ -5834,9 +6083,7 @@ template<> auto AirIRGenerator::addOp<OpType::I32Rotr>(ExpressionType arg0, Expr
 
 template<> auto AirIRGenerator::addOp<OpType::I32GtU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::Above), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::Above, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64ExtendSI32>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5891,9 +6138,7 @@ template<> auto AirIRGenerator::addOp<OpType::I64Extend32S>(ExpressionType arg0,
 
 template<> auto AirIRGenerator::addOp<OpType::I32GtS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare32, Arg::relCond(MacroAssembler::GreaterThan), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I32, MacroAssembler::GreaterThan, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64Neg>(ExpressionType arg0, ExpressionType& result) -> PartialResult
@@ -5913,16 +6158,12 @@ template<> auto AirIRGenerator::addOp<OpType::F64Neg>(ExpressionType arg0, Expre
 
 template<> auto AirIRGenerator::addOp<OpType::I64LeU>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::BelowOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::BelowOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64LeS>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
 {
-    result = g32();
-    append(Compare64, Arg::relCond(MacroAssembler::LessThanOrEqual), arg0, arg1, result);
-    return { };
+    return addCompare(Types::I64, MacroAssembler::LessThanOrEqual, arg0, arg1, result);
 }
 
 template<> auto AirIRGenerator::addOp<OpType::I64Add>(ExpressionType arg0, ExpressionType arg1, ExpressionType& result) -> PartialResult
