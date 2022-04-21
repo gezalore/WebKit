@@ -1257,17 +1257,19 @@ void AirIRGenerator::finalizeEntrypoints()
 
 B3::Type AirIRGenerator::toB3ResultType(BlockSignature returnType)
 {
+    auto signature = returnType->as<FunctionSignature>();
+
     // TODO: only GPR I64s are passed as I32s
-    if (returnType->as<FunctionSignature>()->returnsVoid())
+    if (signature->returnsVoid())
         return B3::Void;
 
-    if (returnType->as<FunctionSignature>()->returnCount() == 1 && (is64Bit() || !returnType->returnType(0).isI64()))
-        return toB3Type(returnType->as<FunctionSignature>()->returnType(0));
+    if (signature->returnCount() == 1 && (is64Bit() || !signature->returnType(0).isI64()))
+        return toB3Type(signature->returnType(0));
 
     auto result = m_tupleMap.ensure(returnType, [&] {
         Vector<B3::Type> result;
-        for (unsigned i = 0; i < returnType->as<FunctionSignature>()->returnCount(); ++i)
-            Type type = returnType->as<FunctionSignature>()->returnType(i);
+        for (unsigned i = 0; i < signature->returnCount(); ++i) {
+            Type type = signature->returnType(i);
 #if USE(JSVALUE32_64)
             if (type.isI64()) {
                 result.append(B3::Int32);
