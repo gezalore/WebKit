@@ -65,6 +65,8 @@ namespace JSC { namespace Wasm {
 
 using namespace B3::Air;
 
+static constexpr B3::Air::Opcode AddPtr = is64Bit() ? Add64 : Add32;
+
 struct ConstrainedTmp {
     ConstrainedTmp() = default;
     ConstrainedTmp(Tmp tmp)
@@ -868,21 +870,44 @@ private:
         }
     }
 
-    void emitLoad(B3::Air::Opcode op, B3::Type type, Tmp base, size_t offset, Tmp result)
-    {
-        if (Arg::isValidAddrForm(offset, B3::widthForType(type)))
-            append(op, Arg::addr(base, offset), result);
-        else {
-            auto temp2 = g64();
-            append(Move, Arg::bigImm(offset), temp2);
-            append(Add64, temp2, base, temp2);
-            append(op, Arg::addr(temp2), result);
-        }
-    }
-
     void emitLoad(Tmp base, size_t offset, const TypedTmp& result)
     {
-        emitLoad(moveOpForValueType(result.type()), toB3Type(result.type()), base, offset, result.tmp());
+        if (!Arg::isValidAddrForm(offset, B3::widthForType(toB3Type(result.type())))) {
+            auto temp = gPtr();
+            append(Move, Arg::bigImm(offset), temp);
+            append(AddPtr, temp, base, temp);
+            base = temp.tmp();
+            offset = 0;
+        }
+
+#if USE(JSVALUE32_64)
+        if (result.type().isI64()) {
+            append(Move, Arg::addr(base, offset), result.lo());
+            append(Move, Arg::addr(base, offset + 4), result.hi());
+            return;
+        }
+#endif
+        append(moveOpForValueType(result.type()), Arg::addr(base, offset), result);
+    }
+
+    void emitStore(const TypedTmp& value, Tmp base, size_t offset)
+    {
+        if (!Arg::isValidAddrForm(offset, B3::widthForType(toB3Type(value.type())))) {
+            auto temp = gPtr();
+            append(Move, Arg::bigImm(offset), temp);
+            append(AddPtr, temp, base, temp);
+            base = temp.tmp();
+            offset = 0;
+        }
+
+#if USE(JSVALUE32_64)
+        if (value.type().isI64()) {
+            append(Move, value.lo(), Arg::addr(base, offset));
+            append(Move, value.hi(), Arg::addr(base, offset + 4));
+            return;
+        }
+#endif
+        append(moveOpForValueType(value.type()), value, Arg::addr(base, offset));
     }
 
     void emitThrowException(CCallHelpers&, ExceptionType);
@@ -1003,7 +1028,7 @@ int32_t AirIRGenerator::fixupPointerPlusOffset(ExpressionType& ptr, uint32_t off
         ptr = gPtr();
         auto constant = gPtr();
         append(Move, Arg::bigImm(offset), constant);
-        append(is64Bit() ? Add64 : Add32, constant, previousPtr, ptr);
+        append(AddPtr, constant, previousPtr, ptr);
         return 0;
     }
     return offset;
@@ -1771,8 +1796,16 @@ auto AirIRGenerator::addDataDrop(unsigned dataSegmentIndex) -> PartialResult
 
 auto AirIRGenerator::setLocal(uint32_t index, ExpressionType value) -> PartialResult
 {
-    ASSERT(m_locals[index].tmp());
-    append(moveOpForValueType(m_locals[index].type()), value, m_locals[index].tmp());
+    TypedTmp local = m_locals[index];
+    ASSERT(local);
+#if USE(JSVALUE32_64)
+    if (local.type().isI64()) {
+        append(Move, value.hi(), local.hi());
+        append(Move, value.lo(), local.lo());
+        return { };
+    }
+#endif
+    append(moveOpForValueType(local.type()), value, local);
     return { };
 }
 
@@ -1781,80 +1814,66 @@ auto AirIRGenerator::getGlobal(uint32_t index, ExpressionType& result) -> Partia
     const Wasm::GlobalInformation& global = m_info.globals[index];
     Type type = global.type;
 
-    result = tmpForType(type);
-
-    auto temp = g64();
-
-    RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfGlobals(), B3::Width64));
+    auto temp = gPtr();
+    RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfGlobals(), B3::pointerWidth()));
     append(Move, Arg::addr(instanceValue(), Instance::offsetOfGlobals()), temp);
-
     int32_t offset = safeCast<int32_t>(index * sizeof(Register));
-    switch (global.bindingMode) {
-    case Wasm::GlobalInformation::BindingMode::EmbeddedInInstance:
-        if (Arg::isValidAddrForm(offset, B3::widthForType(toB3Type(type))))
-            append(moveOpForValueType(type), Arg::addr(temp, offset), result);
-        else {
-            auto temp2 = g64();
-            append(Move, Arg::bigImm(offset), temp2);
-            append(Add64, temp2, temp, temp);
-            append(moveOpForValueType(type), Arg::addr(temp), result);
-        }
-        break;
-    case Wasm::GlobalInformation::BindingMode::Portable:
+
+    if (global.bindingMode == Wasm::GlobalInformation::BindingMode::Portable) {
         ASSERT(global.mutability == Wasm::Mutability::Mutable);
-        if (Arg::isValidAddrForm(offset, B3::Width64))
+        if (Arg::isValidAddrForm(offset, B3::pointerWidth()))
             append(Move, Arg::addr(temp, offset), temp);
         else {
-            auto temp2 = g64();
+            auto temp2 = gPtr();
             append(Move, Arg::bigImm(offset), temp2);
-            append(Add64, temp2, temp, temp);
+            append(AddPtr, temp2, temp, temp);
             append(Move, Arg::addr(temp), temp);
         }
-        append(moveOpForValueType(type), Arg::addr(temp), result);
-        break;
-    }
+        offset = 0;
+    } else
+        ASSERT(global.bindingMode == Wasm::GlobalInformation::BindingMode::EmbeddedInInstance);
+
+    result = tmpForType(type);
+    emitLoad(temp, offset, result);
+
     return { };
 }
 
 auto AirIRGenerator::setGlobal(uint32_t index, ExpressionType value) -> PartialResult
 {
-    auto temp = g64();
-
-    RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfGlobals(), B3::Width64));
-    append(Move, Arg::addr(instanceValue(), Instance::offsetOfGlobals()), temp);
-
     const Wasm::GlobalInformation& global = m_info.globals[index];
     Type type = global.type;
 
+    auto temp = gPtr();
+    RELEASE_ASSERT(Arg::isValidAddrForm(Instance::offsetOfGlobals(), B3::pointerWidth()));
+    append(Move, Arg::addr(instanceValue(), Instance::offsetOfGlobals()), temp);
     int32_t offset = safeCast<int32_t>(index * sizeof(Register));
-    switch (global.bindingMode) {
-    case Wasm::GlobalInformation::BindingMode::EmbeddedInInstance:
-        if (Arg::isValidAddrForm(offset, B3::widthForType(toB3Type(type))))
-            append(moveOpForValueType(type), value, Arg::addr(temp, offset));
-        else {
-            auto temp2 = g64();
-            append(Move, Arg::bigImm(offset), temp2);
-            append(Add64, temp2, temp, temp);
-            append(moveOpForValueType(type), value, Arg::addr(temp));
-        }
-        if (isRefType(type))
-            emitWriteBarrierForJSWrapper();
-        break;
-    case Wasm::GlobalInformation::BindingMode::Portable:
+
+    if (global.bindingMode == Wasm::GlobalInformation::BindingMode::Portable) {
         ASSERT(global.mutability == Wasm::Mutability::Mutable);
-        if (Arg::isValidAddrForm(offset, B3::Width64))
+        if (Arg::isValidAddrForm(offset, B3::pointerWidth()))
             append(Move, Arg::addr(temp, offset), temp);
         else {
-            auto temp2 = g64();
+            auto temp2 = gPtr();
             append(Move, Arg::bigImm(offset), temp2);
-            append(Add64, temp2, temp, temp);
+            append(AddPtr, temp2, temp, temp);
             append(Move, Arg::addr(temp), temp);
         }
-        append(moveOpForValueType(type), value, Arg::addr(temp));
-        // We emit a write-barrier onto JSWebAssemblyGlobal, not JSWebAssemblyInstance.
-        if (isRefType(type)) {
-            auto cell = g64();
-            auto vm = g64();
+        offset = 0;
+    } else
+        ASSERT(global.bindingMode == Wasm::GlobalInformation::BindingMode::EmbeddedInInstance);
+
+
+    emitStore(value, temp, offset);
+
+    if (isRefType(type)) {
+        switch (global.bindingMode) {
+        case Wasm::GlobalInformation::BindingMode::EmbeddedInInstance:
+            emitWriteBarrierForJSWrapper();
+            break;
+        case Wasm::GlobalInformation::BindingMode::Portable:
+            auto cell = gPtr();
+            auto vm = gPtr();
             auto cellState = g32();
             auto threshold = g32();
 
@@ -1880,7 +1899,7 @@ auto AirIRGenerator::setGlobal(uint32_t index, ExpressionType value) -> PartialR
             m_currentBlock = fencePath;
 
             auto* doFence = addPatchpoint(B3::Void);
-            doFence->setGenerator([] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
+            doFence->setGenerator([](CCallHelpers& jit, const B3::StackmapGenerationParams&) {
                 jit.memoryFence();
             });
             emitPatchpoint(doFence, TypedTmp());
@@ -1894,8 +1913,8 @@ auto AirIRGenerator::setGlobal(uint32_t index, ExpressionType value) -> PartialR
             append(Jump);
             m_currentBlock->setSuccessors(continuation);
             m_currentBlock = continuation;
+            break;
         }
-        break;
     }
 
     return { };
@@ -1903,8 +1922,8 @@ auto AirIRGenerator::setGlobal(uint32_t index, ExpressionType value) -> PartialR
 
 inline void AirIRGenerator::emitWriteBarrierForJSWrapper()
 {
-    auto cell = g64();
-    auto vm = g64();
+    auto cell = gPtr();
+    auto vm = gPtr();
     auto cellState = g32();
     auto threshold = g32();
 
@@ -1971,7 +1990,7 @@ inline AirIRGenerator::ExpressionType AirIRGenerator::emitCheckAndPreparePointer
         ASSERT(sizeOfOperation + offset > offset);
         auto temp = gPtr();
         append(Move, Arg::bigImm(static_cast<uint64_t>(sizeOfOperation) + offset - 1), temp);
-        append(is64Bit() ? Add64 : Add32, result, temp);
+        append(AddPtr, result, temp);
 
         emitCheck([&] {
             return Inst(is64Bit() ? Branch64 : Branch32, nullptr, Arg::relCond(MacroAssembler::AboveOrEqual), temp, boundsCheckingSize);
@@ -2011,7 +2030,7 @@ inline AirIRGenerator::ExpressionType AirIRGenerator::emitCheckAndPreparePointer
 #endif
     }
 
-    append(is64Bit() ? Add64 : Add32, memoryBase, result);
+    append(AddPtr, memoryBase, result);
     return result;
 }
 
@@ -2055,7 +2074,7 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
             immTmp = gPtr();
             newPtr = gPtr();
             append(Move, Arg::bigImm(offset), immTmp);
-            append(is64Bit() ? Add64 : Add32, immTmp, pointer, newPtr);
+            append(AddPtr, immTmp, pointer, newPtr);
             return Arg::addr(newPtr);
         }
     };
@@ -2268,7 +2287,7 @@ inline void AirIRGenerator::emitStoreOp(StoreOpType op, ExpressionType pointer, 
             immTmp = gPtr();
             newPtr = gPtr();
             append(Move, Arg::bigImm(offset), immTmp);
-            append(is64Bit() ? Add64 : Add32, immTmp, pointer, newPtr);
+            append(AddPtr, immTmp, pointer, newPtr);
             return Arg::addr(newPtr);
         }
     };
@@ -3927,7 +3946,7 @@ auto AirIRGenerator::addCall(uint32_t functionIndex, const TypeDefinition& signa
         // FIXME: We should have better isel here.
         // https://bugs.webkit.org/show_bug.cgi?id=193999
         append(Move, Arg::bigImm(Instance::offsetOfTargetInstance(functionIndex)), targetInstance);
-        append(is64Bit() ? Add64 : Add32, instanceValue(), targetInstance);
+        append(AddPtr, instanceValue(), targetInstance);
         append(Move, Arg::addr(targetInstance), targetInstance);
 
         BasicBlock* isWasmBlock = m_code.addBlock();
@@ -3962,7 +3981,7 @@ auto AirIRGenerator::addCall(uint32_t functionIndex, const TypeDefinition& signa
         {
             auto jumpDestination = gPtr();
             append(isEmbedderBlock, Move, Arg::bigImm(Instance::offsetOfWasmToEmbedderStub(functionIndex)), jumpDestination);
-            append(isEmbedderBlock, is64Bit() ? Add64 : Add32, instanceValue(), jumpDestination);
+            append(isEmbedderBlock, AddPtr, instanceValue(), jumpDestination);
             append(isEmbedderBlock, Move, Arg::addr(jumpDestination), jumpDestination);
 
             Vector<ConstrainedTmp> jumpArgs;
