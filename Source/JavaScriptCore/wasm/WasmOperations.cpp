@@ -1030,7 +1030,7 @@ JSC_DEFINE_JIT_OPERATION(operationWasmToJSException, void*, (CallFrame* callFram
     return vm.targetMachinePCForThrow;
 }
 
-JSC_DEFINE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, PointerPair, (Instance* instance))
+JSC_DEFINE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, SlowPathReturnType, (Instance* instance))
 {
 #if USE(JSVALUE64)
     JSWebAssemblyInstance* jsInstance = instance->owner<JSWebAssemblyInstance>();
@@ -1051,7 +1051,7 @@ JSC_DEFINE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, Poin
     void* payload = nullptr;
     if (JSWebAssemblyException* wasmException = jsDynamicCast<JSWebAssemblyException*>(thrownValue))
         payload = bitwise_cast<void*>(wasmException->payload().data());
-    return PointerPair { bitwise_cast<void*>(JSValue::encode(thrownValue)), payload };
+    return encodeResult(bitwise_cast<void*>(JSValue::encode(thrownValue)), payload);
 #elif USE(JSVALUE32_64)
     // Note: This function needs to return a pointer and a JSValue, so will need to
     // change signature on JSVALE32_64, nevertheless, for now it's unused.
