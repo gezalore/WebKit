@@ -606,11 +606,11 @@ private:
                         JumpTableCodePtr* jumpTable = static_cast<JumpTableCodePtr*>(
                             params.proc().addDataSection(sizeof(JumpTableCodePtr) * tableSize));
 
-                        GPRReg index = params[0].gpr();
                         GPRReg scratch = params.gpScratch(0);
 
                         jit.move(CCallHelpers::TrustedImmPtr(jumpTable), scratch);
 #if USE(JSVALUE64)
+                        GPRReg index = params[0].gpr();
                         jit.load64(CCallHelpers::BaseIndex(scratch, index, CCallHelpers::ScalePtr), scratch);
 #elif USE(JSVALUE32_64)
                         UNREACHABLE_FOR_PLATFORM();

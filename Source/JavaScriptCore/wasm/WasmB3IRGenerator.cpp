@@ -3434,6 +3434,8 @@ auto B3IRGenerator::addOp<OpType::I64Ctz>(ExpressionType argVar, ExpressionType&
 #if USE(JSVALUE64)
         jit.countTrailingZeros64(params[1].gpr(), params[0].gpr());
 #elif USE(JSVALUE32_64)
+        UNUSED_PARAM(jit);
+        UNUSED_PARAM(params);
         UNREACHABLE_FOR_PLATFORM();
 #endif
     });
