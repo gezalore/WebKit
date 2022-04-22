@@ -184,11 +184,7 @@ static inline void emitCatchPrologueShared(B3::Air::Code& code, CCallHelpers& ji
     jit.storePtr(CCallHelpers::TrustedImmPtr(nullptr), CCallHelpers::Address(GPRInfo::regT0, VM::calleeForWasmCatchOffset()));
     jit.emitPutToCallFrameHeader(GPRInfo::regT3, CallFrameSlot::callee);
 
-#if USE(JSVALUE64)
-    jit.load64(CCallHelpers::Address(GPRInfo::regT0, VM::callFrameForCatchOffset()), GPRInfo::callFrameRegister);
-#elif USE(JSVALUE32_64)
-    UNREACHABLE_FOR_PLATFORM();
-#endif
+    jit.loadPtr(CCallHelpers::Address(GPRInfo::regT0, VM::callFrameForCatchOffset()), GPRInfo::callFrameRegister);
     jit.storePtr(CCallHelpers::TrustedImmPtr(nullptr), CCallHelpers::Address(GPRInfo::regT0, VM::callFrameForCatchOffset()));
 
     jit.loadPtr(CCallHelpers::Address(GPRInfo::callFrameRegister, CallFrameSlot::thisArgument * sizeof(Register)), GPRInfo::regT3);

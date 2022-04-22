@@ -129,16 +129,19 @@ public:
     TypedTmp& operator=(TypedTmp&&) = default;
     TypedTmp& operator=(const TypedTmp&) = default;
 
-#if USE(JSVALUE64)
     bool operator==(const TypedTmp& other) const
     {
-        return m_tmp == other.m_tmp && m_type == other.m_type;
+        bool same = m_tmp == other.m_tmp && m_type == other.m_type;
+#if USE(JSVALUE32_64)
+        same = same && m_tmpHi == other.m_tmpHi;
+#endif
+        return same;
     }
+
     bool operator!=(const TypedTmp& other) const
     {
         return !(*this == other);
     }
-#endif
 
     operator Tmp() const
     {
@@ -1161,11 +1164,8 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
             if (m_catchEntrypoints.size()) {
                 GPRReg scratch = wasmCallingConvention().prologueScratchGPRs[0];
                 jit.loadPtr(CCallHelpers::Address(m_prologueWasmContextGPR, Instance::offsetOfOwner()), scratch);
-#if USE(JSVALUE64)
-                jit.store64(scratch, CCallHelpers::Address(GPRInfo::callFrameRegister, CallFrameSlot::thisArgument * sizeof(Register)));
-#elif USE(JSVALUE32_64)
-                UNREACHABLE_FOR_PLATFORM();
-#endif
+                jit.storePtr(scratch, CCallHelpers::Address(GPRInfo::callFrameRegister, CallFrameSlot::thisArgument * sizeof(Register)));
+                // FIXME: Does the tag field need setting?
             }
         }
     });
@@ -1497,11 +1497,15 @@ auto AirIRGenerator::addRefIsNull(ExpressionType value, ExpressionType& result) 
 {
     ASSERT(value.tmp());
     result = tmpForType(Types::I32);
+#if USE(JSVALUE64)
     auto tmp = g64();
-
     append(Move, Arg::bigImm(JSValue::encode(jsNull())), tmp);
     append(Compare64, Arg::relCond(MacroAssembler::Equal), value, tmp, result);
-
+#elif USE(JSVALUE32_64)
+    auto tmp = g32();
+    append(Move, Arg::bigImm(JSValue::NullTag), tmp);
+    append(Compare32, Arg::relCond(MacroAssembler::Equal), value.hi(), tmp, result);
+#endif
     return { };
 }
 
@@ -3301,7 +3305,7 @@ void AirIRGenerator::emitEntryTierUpCheck()
     if (!m_tierUp)
         return;
 
-    auto countdownPtr = g64();
+    auto countdownPtr = gPtr();
     append(Move, Arg::bigImm(bitwise_cast<uintptr_t>(&m_tierUp->m_counter)), countdownPtr);
 
     auto* patch = addPatchpoint(B3::Void);
@@ -3352,7 +3356,7 @@ void AirIRGenerator::emitLoopTierUpCheck(uint32_t loopIndex, const Vector<TypedT
     m_tierUp->osrEntryTriggers().append(TierUpCount::TriggerReason::DontTrigger);
     m_tierUp->outerLoops().append(outerLoopIndex);
 
-    auto countdownPtr = g64();
+    auto countdownPtr = gPtr();
     append(Move, Arg::bigImm(bitwise_cast<uintptr_t>(&m_tierUp->m_counter)), countdownPtr);
 
     auto* patch = addPatchpoint(B3::Void);
@@ -3551,9 +3555,9 @@ Tmp AirIRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned ex
 
     if (ControlType::isTry(data)) {
         if (kind == CatchKind::Catch)
-            data.convertTryToCatch(++m_callSiteIndex, g64());
+            data.convertTryToCatch(++m_callSiteIndex, gPtr());
         else
-            data.convertTryToCatchAll(++m_callSiteIndex, g64());
+            data.convertTryToCatchAll(++m_callSiteIndex, gPtr());
     }
     // We convert from "try" to "catch" ControlType above. This doesn't
     // happen if ControlType is already a "catch". This can happen when
@@ -3577,8 +3581,7 @@ Tmp AirIRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned ex
     forEachLiveValue([&] (TypedTmp tmp) {
         // We set our current ControlEntry's exception below after the patchpoint, it's
         // not in the incoming buffer of live values.
-        auto toIgnore = data.exception();
-        if (tmp.tmp() != toIgnore.tmp())
+        if (tmp != data.exception())
             loadFromScratchBuffer(tmp);
     });
 
@@ -4115,6 +4118,7 @@ auto AirIRGenerator::addCallRef(const TypeDefinition& signature, Vector<Expressi
     m_maxNumJSCallArguments = std::max(m_maxNumJSCallArguments, static_cast<uint32_t>(args.size()));
 
     // Check the target reference for null.
+#if USE(JSVALUE64)
     auto tmpForNull = g64();
     append(Move, Arg::bigImm(JSValue::encode(jsNull())), tmpForNull);
     emitCheck([&] {
@@ -4122,11 +4126,20 @@ auto AirIRGenerator::addCallRef(const TypeDefinition& signature, Vector<Expressi
     }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
         this->emitThrowException(jit, ExceptionType::NullReference);
     });
+#elif USE(JSVALUE32_64)
+    auto tmpForNull = g32();
+    append(Move, Arg::bigImm(JSValue::NullTag), tmpForNull);
+    emitCheck([&] {
+        return Inst(Branch32, nullptr, Arg::relCond(MacroAssembler::Equal), calleeFunction.hi(), tmpForNull);
+    }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
+        this->emitThrowException(jit, ExceptionType::NullReference);
+    });
+#endif
 
-    ExpressionType calleeCode = g64();
+    ExpressionType calleeCode = gPtr();
     append(Move, Arg::addr(calleeFunction, WebAssemblyFunctionBase::offsetOfEntrypointLoadLocation()), calleeCode); // Pointer to callee code.
 
-    auto calleeInstance = g64();
+    auto calleeInstance = gPtr();
     append(Move, Arg::addr(calleeFunction, WebAssemblyFunctionBase::offsetOfInstance()), calleeInstance);
     append(Move, Arg::addr(calleeInstance, JSWebAssemblyInstance::offsetOfInstance()), calleeInstance);
 
@@ -5494,7 +5507,7 @@ template<> auto AirIRGenerator::addOp<OpType::F32Copysign>(ExpressionType arg0, 
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64ConvertUI32>(ExpressionType arg0, ExpressionType& result) -> PartialResult
-{
+{ // TODO
     result = f64();
     auto temp = g64();
     append(Move32, arg0, temp);
@@ -5791,7 +5804,7 @@ template<> auto AirIRGenerator::addOp<OpType::I32ShrU>(ExpressionType arg0, Expr
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F32ConvertUI32>(ExpressionType arg0, ExpressionType& result) -> PartialResult
-{
+{ // TODO
     result = f32();
     auto temp = g64();
     append(Move32, arg0, temp);
