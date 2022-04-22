@@ -1164,8 +1164,7 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
             if (m_catchEntrypoints.size()) {
                 GPRReg scratch = wasmCallingConvention().prologueScratchGPRs[0];
                 jit.loadPtr(CCallHelpers::Address(m_prologueWasmContextGPR, Instance::offsetOfOwner()), scratch);
-                jit.storePtr(scratch, CCallHelpers::Address(GPRInfo::callFrameRegister, CallFrameSlot::thisArgument * sizeof(Register)));
-                // FIXME: Does the tag field need setting?
+                jit.storeCell(scratch, CCallHelpers::Address(GPRInfo::callFrameRegister, CallFrameSlot::thisArgument * sizeof(Register)));
             }
         }
     });
