@@ -3695,7 +3695,7 @@ auto AirIRGenerator::addReturn(const ControlData& data, const Stack& returnValue
         TypedTmp tmp = returnValues[offset + i];
 
         if (rep.isStack()) {
-            append(moveForType(toB3Type(tmp.type())), tmp, Arg::addr(Tmp(GPRInfo::callFrameRegister), rep.offsetFromFP()));
+            emitStore(tmp, Tmp(GPRInfo::callFrameRegister), rep.offsetFromFP());
             continue;
         }
 
@@ -3703,14 +3703,14 @@ auto AirIRGenerator::addReturn(const ControlData& data, const Stack& returnValue
 #if USE(JSVALUE64)
         if (data.signature()->as<FunctionSignature>()->returnType(i).isI32())
             append(Move32, tmp, tmp);
-        returnConstraints.append(ConstrainedTmp(tmp, wasmCallInfo.results[i]));
+        returnConstraints.append(ConstrainedTmp(tmp, rep));
 #elif USE(JSVALUE32_64)
-        if (data.signature()->as<FunctionSignature>()->returnType(i).isG64()) {
+        if (tmp.isGPPair()) {
             JSValueRegs jsr = wasmCallInfo.results[i].jsr();
             returnConstraints.append(ConstrainedTmp(tmp.lo(), B3::ValueRep { jsr.payloadGPR() }));
             returnConstraints.append(ConstrainedTmp(tmp.hi(), B3::ValueRep { jsr.tagGPR() }));
         } else
-            returnConstraints.append(ConstrainedTmp(tmp, wasmCallInfo.results[i]));
+            returnConstraints.append(ConstrainedTmp(tmp, rep));
 #endif
     }
 
