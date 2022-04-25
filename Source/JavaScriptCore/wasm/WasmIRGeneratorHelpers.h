@@ -180,9 +180,19 @@ static inline void emitCatchPrologueShared(B3::Air::Code& code, CCallHelpers& ji
     }
     jit.restoreCalleeSavesFromVMEntryFrameCalleeSavesBuffer(GPRInfo::regT0, GPRInfo::regT3);
 
-    jit.loadPtr(CCallHelpers::Address(GPRInfo::regT0, VM::calleeForWasmCatchOffset()), GPRInfo::regT3);
-    jit.storePtr(CCallHelpers::TrustedImmPtr(nullptr), CCallHelpers::Address(GPRInfo::regT0, VM::calleeForWasmCatchOffset()));
-    jit.emitPutToCallFrameHeader(GPRInfo::regT3, CallFrameSlot::callee);
+    {
+        CCallHelpers::Address calleeForWasmCatch { GPRInfo::regT0, VM::calleeForWasmCatchOffset() };
+        CCallHelpers::Address calleeSlot { GPRInfo::callFrameRegister, CallFrameSlot::callee * sizeof(Register) };
+        JSValueRegs tmp {
+#if USE(JSVALUE32_64)
+            GPRInfo::nonPreservedNonArgumentGPR0,
+#endif
+            GPRInfo::regT3
+        };
+        jit.loadValue(calleeForWasmCatch, tmp);
+        jit.storeValue(tmp, calleeSlot);
+        jit.storeValue(JSValue{}, calleeForWasmCatch, tmp);
+    }
 
     jit.loadPtr(CCallHelpers::Address(GPRInfo::regT0, VM::callFrameForCatchOffset()), GPRInfo::callFrameRegister);
     jit.storePtr(CCallHelpers::TrustedImmPtr(nullptr), CCallHelpers::Address(GPRInfo::regT0, VM::callFrameForCatchOffset()));
