@@ -89,15 +89,6 @@ struct ConstrainedTmp {
 };
 
 class TypedTmp {
-
-    bool isHandledAsGPPair() const {
-#if USE(JSVALUE64)
-        return false;
-#elif USE(JSVALUE32_64)
-        return type() == Types::I64;
-#endif
-    }
-
 public:
     constexpr TypedTmp()
         : m_type(Types::Void)
@@ -109,7 +100,7 @@ public:
         , m_type(type)
     {
         ASSERT(type != Types::Void);
-        ASSERT(!isHandledAsGPPair());
+        ASSERT(!isGPPair());
     }
 
 #if USE(JSVALUE32_64)
@@ -120,7 +111,7 @@ public:
     {
         ASSERT(!!tmpLo);
         ASSERT(!!tmpHi);
-        ASSERT(isHandledAsGPPair());
+        ASSERT(isGPPair());
     }
 #endif
 
@@ -145,17 +136,25 @@ public:
 
     operator Tmp() const
     {
-        ASSERT(!isHandledAsGPPair());
+        ASSERT(!isGPPair());
         return tmp();
     }
 
     operator Arg() const
     {
-        ASSERT(!isHandledAsGPPair());
+        ASSERT(!isGPPair());
         return Arg(tmp());
     }
 
     explicit operator bool() const { return !!m_tmp; }
+
+    bool isGPPair() const {
+#if USE(JSVALUE64)
+        return false;
+#elif USE(JSVALUE32_64)
+        return type().isG64();
+#endif
+    }
 
     Tmp tmp() const
     {
@@ -181,7 +180,7 @@ public:
     void dump(PrintStream& out) const
     {
 #if USE(JSVALUE32_64)
-        if (isHandledAsGPPair()) {
+        if (isGPPair()) {
             out.print("(", m_tmpHi, "/", m_tmp, ", ", m_type.kind, ", ", m_type.index, ")");
             return;
         }
@@ -584,17 +583,18 @@ private:
         return m_code.newTmp(bank);
     }
 
-    TypedTmp g32() { return { newTmp(B3::GP), Types::I32 }; }
+    TypedTmp gSome64(Type type) {
 #if USE(JSVALUE64)
-    TypedTmp g64() { return { newTmp(B3::GP), Types::I64 }; }
-    TypedTmp gPtr() { return g64(); }
+        return { newTmp(B3::GP), type };
 #elif USE(JSVALUE32_64)
-    TypedTmp g64() { return { newTmp(B3::GP), newTmp(B3::GP), Types::I64 }; }
-    TypedTmp gPtr() { return g32(); }
+        return { newTmp(B3::GP), newTmp(B3::GP), type };
 #endif
-    TypedTmp gExternref() { return { newTmp(B3::GP), Types::Externref }; }
-    TypedTmp gFuncref() { return { newTmp(B3::GP), Types::Funcref }; }
-    TypedTmp gRef(Type type) { return { newTmp(B3::GP), type }; }
+    }
+
+    TypedTmp g32() { return { newTmp(B3::GP), Types::I32 }; }
+    TypedTmp g64() { return gSome64(Types::I64); }
+    TypedTmp gPtr() { return is64Bit() ? g64() : g32(); }
+    TypedTmp gRef(Type type) { return gSome64(type); }
     TypedTmp f32() { return { newTmp(B3::FP), Types::F32 }; }
     TypedTmp f64() { return { newTmp(B3::FP), Types::F64 }; }
 
@@ -606,13 +606,11 @@ private:
         case TypeKind::I64:
             return g64();
         case TypeKind::Funcref:
-            return gFuncref();
         case TypeKind::Ref:
         case TypeKind::RefNull:
         case TypeKind::Rtt:
-            return gRef(type);
         case TypeKind::Externref:
-            return gExternref();
+            return gRef(type);
         case TypeKind::F32:
             return f32();
         case TypeKind::F64:
@@ -689,7 +687,7 @@ private:
                     Arg arg = Arg::callArg(valueRep.offsetFromSP());
                     inst.args.append(arg);
 #if USE(JSVALUE32_64)
-                    if (result.type().isI64()) {
+                    if (result.isGPPair()) {
                         RELEASE_ASSERT_NOT_REACHED();
                         break;
                     }
@@ -699,7 +697,7 @@ private:
                 }
                 case B3::ValueRep::Register: {
 #if USE(JSVALUE32_64)
-                    if (result.type().isI64()) {
+                    if (result.isGPPair()) {
                         inst.args.append(Tmp(valueRep.reg()));
                         resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.lo()));
                         valueRep = patch->resultConstraints[j++];
@@ -714,7 +712,7 @@ private:
                 }
                 case B3::ValueRep::SomeRegister: {
 #if USE(JSVALUE32_64)
-                    if (result.type().isI64()) {
+                    if (result.isGPPair()) {
                         RELEASE_ASSERT_NOT_REACHED();
                         break;
                     }
@@ -831,7 +829,7 @@ private:
 #if USE(JSVALUE64)
             inst.args.append(result.tmp());
 #elif USE(JSVALUE32_64)
-            if (result.type().isI64()) {
+            if (result.isGPPair()) {
                 inst.args.append(result.lo());
                 inst.args.append(result.hi());
             } else
@@ -844,7 +842,7 @@ private:
 #if USE(JSVALUE64)
             inst.args.append(arg.tmp());
 #elif USE(JSVALUE32_64)
-            if (arg.type().isI64()) {
+            if (arg.isGPPair()) {
                 inst.args.append(arg.lo());
                 inst.args.append(arg.hi());
             } else
@@ -887,7 +885,7 @@ private:
         }
 
 #if USE(JSVALUE32_64)
-        if (result.type().isI64()) {
+        if (result.isGPPair()) {
             append(Move, Arg::addr(base, offset), result.lo());
             append(Move, Arg::addr(base, offset + 4), result.hi());
             return;
@@ -907,7 +905,7 @@ private:
         }
 
 #if USE(JSVALUE32_64)
-        if (value.type().isI64()) {
+        if (value.isGPPair()) {
             append(Move, value.lo(), Arg::addr(base, offset));
             append(Move, value.hi(), Arg::addr(base, offset + 4));
             return;
@@ -1205,13 +1203,6 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
             append(Move32, arg, m_locals[i]);
             break;
         case TypeKind::I64:
-#if USE(JSVALUE64)
-            append(Move, arg, m_locals[i]);
-#elif USE(JSVALUE32_64)
-            append(Move, argHi, m_locals[i].hi());
-            append(Move, arg, m_locals[i].lo());
-#endif
-            break;
         case TypeKind::Externref:
         case TypeKind::Funcref:
         case TypeKind::Ref:
@@ -1220,7 +1211,8 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
 #if USE(JSVALUE64)
             append(Move, arg, m_locals[i]);
 #elif USE(JSVALUE32_64)
-            UNREACHABLE_FOR_PLATFORM();
+            append(Move, argHi, m_locals[i].hi());
+            append(Move, arg, m_locals[i].lo());
 #endif
             break;
         case TypeKind::F32:
@@ -1295,7 +1287,7 @@ B3::Type AirIRGenerator::toB3ResultType(BlockSignature returnType)
     if (signature->returnsVoid())
         return B3::Void;
 
-    if (signature->returnCount() == 1 && (is64Bit() || !signature->returnType(0).isI64()))
+    if (signature->returnCount() == 1 && (is64Bit() || !signature->returnType(0).isG64()))
         return toB3Type(signature->returnType(0));
 
     auto result = m_tupleMap.ensure(returnType, [&] {
@@ -1303,7 +1295,7 @@ B3::Type AirIRGenerator::toB3ResultType(BlockSignature returnType)
         for (unsigned i = 0; i < signature->returnCount(); ++i) {
             Type type = signature->returnType(i);
 #if USE(JSVALUE32_64)
-            if (type.isI64()) {
+            if (type.isG64()) {
                 result.append(B3::Int32);
                 result.append(B3::Int32);
                 continue;
@@ -1396,14 +1388,19 @@ auto AirIRGenerator::addLocal(Type type, uint32_t count) -> PartialResult
         auto local = tmpForType(type);
         m_locals.uncheckedAppend(local);
         switch (type.kind) {
+        case TypeKind::I32:
+            append(Xor32, local, local);
+            break;
         case TypeKind::Externref:
         case TypeKind::Funcref:
         case TypeKind::Ref:
         case TypeKind::RefNull:
+#if USE(JSVALUE64)
             append(Move, Arg::imm(JSValue::encode(jsNull())), local);
-            break;
-        case TypeKind::I32:
-            append(Xor32, local, local);
+#elif USE(JSVALUE32_64)
+            append(Move, Arg::bigImmLo32(JSValue::encode(jsNull())), local.lo());
+            append(Move, Arg::bigImmHi32(JSValue::encode(jsNull())), local.hi());
+#endif
             break;
         case TypeKind::I64:
 #if USE(JSVALUE64)
@@ -1440,12 +1437,12 @@ auto AirIRGenerator::addConstant(BasicBlock* block, Type type, uint64_t value) -
     auto result = tmpForType(type);
     switch (type.kind) {
     case TypeKind::I32:
+        append(block, Move, Arg::bigImm(value), result);
+        break;
     case TypeKind::Externref:
     case TypeKind::Funcref:
     case TypeKind::Ref:
     case TypeKind::RefNull:
-        append(block, Move, Arg::bigImm(value), result);
-        break;
     case TypeKind::I64:
 #if USE(JSVALUE64)
         append(block, Move, Arg::bigImm(value), result);
@@ -1494,7 +1491,7 @@ auto AirIRGenerator::addArguments(const TypeDefinition& signature) -> PartialRes
 
 auto AirIRGenerator::addRefIsNull(ExpressionType value, ExpressionType& result) -> PartialResult
 {
-    ASSERT(value.tmp());
+    ASSERT(value);
     result = tmpForType(Types::I32);
 #if USE(JSVALUE64)
     auto tmp = g64();
@@ -1524,7 +1521,7 @@ auto AirIRGenerator::addRefFunc(uint32_t index, ExpressionType& result) -> Parti
 auto AirIRGenerator::addTableGet(unsigned tableIndex, ExpressionType index, ExpressionType& result) -> PartialResult
 {
     // FIXME: Emit this inline <https://bugs.webkit.org/show_bug.cgi?id=198506>.
-    ASSERT(index.tmp());
+    ASSERT(index);
 
     ASSERT(index.type().isI32());
     result = tmpForType(m_info.tables[tableIndex].wasmType());
@@ -1542,9 +1539,9 @@ auto AirIRGenerator::addTableGet(unsigned tableIndex, ExpressionType index, Expr
 auto AirIRGenerator::addTableSet(unsigned tableIndex, ExpressionType index, ExpressionType value) -> PartialResult
 {
     // FIXME: Emit this inline <https://bugs.webkit.org/show_bug.cgi?id=198506>.
-    ASSERT(index.tmp());
+    ASSERT(index);
     ASSERT(index.type().isI32());
-    ASSERT(value.tmp());
+    ASSERT(value);
 
     auto shouldThrow = g32();
     emitCCall(&operationSetWasmTableElement, shouldThrow, instanceValue(), addConstant(Types::I32, tableIndex), index, value);
@@ -1560,13 +1557,13 @@ auto AirIRGenerator::addTableSet(unsigned tableIndex, ExpressionType index, Expr
 
 auto AirIRGenerator::addTableInit(unsigned elementIndex, unsigned tableIndex, ExpressionType dstOffset, ExpressionType srcOffset, ExpressionType length) -> PartialResult
 {
-    ASSERT(dstOffset.tmp());
+    ASSERT(dstOffset);
     ASSERT(dstOffset.type().isI32());
 
-    ASSERT(srcOffset.tmp());
+    ASSERT(srcOffset);
     ASSERT(srcOffset.type().isI32());
 
-    ASSERT(length.tmp());
+    ASSERT(length);
     ASSERT(length.type().isI32());
 
     auto result = tmpForType(Types::I32);
@@ -1603,9 +1600,9 @@ auto AirIRGenerator::addTableSize(unsigned tableIndex, ExpressionType& result) -
 
 auto AirIRGenerator::addTableGrow(unsigned tableIndex, ExpressionType fill, ExpressionType delta, ExpressionType& result) -> PartialResult
 {
-    ASSERT(fill.tmp());
+    ASSERT(fill);
     ASSERT(isSubtype(fill.type(), m_info.tables[tableIndex].wasmType()));
-    ASSERT(delta.tmp());
+    ASSERT(delta);
     ASSERT(delta.type().isI32());
     result = tmpForType(Types::I32);
 
@@ -1616,11 +1613,11 @@ auto AirIRGenerator::addTableGrow(unsigned tableIndex, ExpressionType fill, Expr
 
 auto AirIRGenerator::addTableFill(unsigned tableIndex, ExpressionType offset, ExpressionType fill, ExpressionType count) -> PartialResult
 {
-    ASSERT(fill.tmp());
+    ASSERT(fill);
     ASSERT(isSubtype(fill.type(), m_info.tables[tableIndex].wasmType()));
-    ASSERT(offset.tmp());
+    ASSERT(offset);
     ASSERT(offset.type().isI32());
-    ASSERT(count.tmp());
+    ASSERT(count);
     ASSERT(count.type().isI32());
 
     auto result = tmpForType(Types::I32);
@@ -1637,13 +1634,13 @@ auto AirIRGenerator::addTableFill(unsigned tableIndex, ExpressionType offset, Ex
 
 auto AirIRGenerator::addTableCopy(unsigned dstTableIndex, unsigned srcTableIndex, ExpressionType dstOffset, ExpressionType srcOffset, ExpressionType length) -> PartialResult
 {
-    ASSERT(dstOffset.tmp());
+    ASSERT(dstOffset);
     ASSERT(dstOffset.type().isI32());
 
-    ASSERT(srcOffset.tmp());
+    ASSERT(srcOffset);
     ASSERT(srcOffset.type().isI32());
 
-    ASSERT(length.tmp());
+    ASSERT(length);
     ASSERT(length.type().isI32());
 
     auto result = tmpForType(Types::I32);
@@ -1668,7 +1665,7 @@ auto AirIRGenerator::getLocal(uint32_t index, ExpressionType& result) -> Partial
     ASSERT(local);
     result = tmpForType(local.type());
 #if USE(JSVALUE32_64)
-    if (local.type().isI64()) {
+    if (local.isGPPair()) {
         append(Move, local.hi(), result.hi());
         append(Move, local.lo(), result.lo());
         return { };
@@ -1720,13 +1717,13 @@ auto AirIRGenerator::addCurrentMemory(ExpressionType& result) -> PartialResult
 
 auto AirIRGenerator::addMemoryFill(ExpressionType dstAddress, ExpressionType targetValue, ExpressionType count) -> PartialResult
 {
-    ASSERT(dstAddress.tmp());
+    ASSERT(dstAddress);
     ASSERT(dstAddress.type().isI32());
 
-    ASSERT(targetValue.tmp());
+    ASSERT(targetValue);
     ASSERT(targetValue.type().isI32());
 
-    ASSERT(count.tmp());
+    ASSERT(count);
     ASSERT(count.type().isI32());
 
     auto result = tmpForType(Types::I32);
@@ -1745,13 +1742,13 @@ auto AirIRGenerator::addMemoryFill(ExpressionType dstAddress, ExpressionType tar
 
 auto AirIRGenerator::addMemoryCopy(ExpressionType dstAddress, ExpressionType srcAddress, ExpressionType count) -> PartialResult
 {
-    ASSERT(dstAddress.tmp());
+    ASSERT(dstAddress);
     ASSERT(dstAddress.type().isI32());
 
-    ASSERT(srcAddress.tmp());
+    ASSERT(srcAddress);
     ASSERT(srcAddress.type().isI32());
 
-    ASSERT(count.tmp());
+    ASSERT(count);
     ASSERT(count.type().isI32());
 
     auto result = tmpForType(Types::I32);
@@ -1770,13 +1767,13 @@ auto AirIRGenerator::addMemoryCopy(ExpressionType dstAddress, ExpressionType src
 
 auto AirIRGenerator::addMemoryInit(unsigned dataSegmentIndex, ExpressionType dstAddress, ExpressionType srcAddress, ExpressionType length) -> PartialResult
 {
-    ASSERT(dstAddress.tmp());
+    ASSERT(dstAddress);
     ASSERT(dstAddress.type().isI32());
 
-    ASSERT(srcAddress.tmp());
+    ASSERT(srcAddress);
     ASSERT(srcAddress.type().isI32());
 
-    ASSERT(length.tmp());
+    ASSERT(length);
     ASSERT(length.type().isI32());
 
     auto result = tmpForType(Types::I32);
@@ -1805,7 +1802,7 @@ auto AirIRGenerator::setLocal(uint32_t index, ExpressionType value) -> PartialRe
     TypedTmp local = m_locals[index];
     ASSERT(local);
 #if USE(JSVALUE32_64)
-    if (local.type().isI64()) {
+    if (local.isGPPair()) {
         append(Move, value.hi(), local.hi());
         append(Move, value.lo(), local.lo());
         return { };
@@ -3707,7 +3704,7 @@ auto AirIRGenerator::addReturn(const ControlData& data, const Stack& returnValue
             append(Move32, tmp, tmp);
         returnConstraints.append(ConstrainedTmp(tmp, wasmCallInfo.results[i]));
 #elif USE(JSVALUE32_64)
-        if (data.signature()->as<FunctionSignature>()->returnType(i).isI64()) {
+        if (data.signature()->as<FunctionSignature>()->returnType(i).isG64()) {
             JSValueRegs jsr = wasmCallInfo.results[i].jsr();
             returnConstraints.append(ConstrainedTmp(tmp.lo(), B3::ValueRep { jsr.payloadGPR() }));
             returnConstraints.append(ConstrainedTmp(tmp.hi(), B3::ValueRep { jsr.tagGPR() }));
@@ -3885,7 +3882,7 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
     size_t argConstraints = args.size();
 #if USE(JSVALUE32_64)
     for (unsigned i = 0; i < args.size(); ++i) {
-        if (args[i].type().isI64() && locations.params[i].isGPR())
+        if (args[i].isGPPair() && locations.params[i].isGPR())
             ++argConstraints;
     }
 #endif
@@ -3898,7 +3895,7 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
         const TypedTmp& arg = args[i];
         ValueLocation& loc = locations.params[i];
 #if USE(JSVALUE32_64)
-        if (arg.type().isI64() && loc.isGPR()) {
+        if (arg.isGPPair() && loc.isGPR()) {
             patchArgs[offset + j++] = ConstrainedTmp(arg.lo(), B3::ValueRep(loc.jsr().payloadGPR()));
             patchArgs[offset + j++] = ConstrainedTmp(arg.hi(), B3::ValueRep(loc.jsr().tagGPR()));
             continue;
@@ -3914,7 +3911,7 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
             ValueLocation& loc = locations.results[i];
 #if USE(JSVALUE32_64)
             const TypedTmp& result = results[i];
-            if (result.type().isI64() && loc.isGPR()) {
+            if (result.isGPPair() && loc.isGPR()) {
                 resultConstraints.append(B3::ValueRep(loc.jsr().payloadGPR()));
                 resultConstraints.append(B3::ValueRep(loc.jsr().tagGPR()));
                 continue;
@@ -4231,8 +4228,8 @@ void AirIRGenerator::unify(const ExpressionType dst, const ExpressionType source
 {
     ASSERT(isSubtype(source.type(), dst.type()));
 #if USE(JSVALUE32_64)
-    if (source.type().isI64()) {
-        ASSERT(dst.type().isI64());
+    if (source.isGPPair()) {
+        ASSERT(dst.isGPPair());
         append(Move, source.lo(), dst.lo());
         append(Move, source.hi(), dst.hi());
         return;
