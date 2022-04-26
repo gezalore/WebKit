@@ -1030,9 +1030,8 @@ JSC_DEFINE_JIT_OPERATION(operationWasmToJSException, void*, (CallFrame* callFram
     return vm.targetMachinePCForThrow;
 }
 
-JSC_DEFINE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, SlowPathReturnType, (Instance* instance))
+JSC_DEFINE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, void*, (Instance* instance, EncodedJSValue* encodedThrownValue))
 {
-#if USE(JSVALUE64)
     JSWebAssemblyInstance* jsInstance = instance->owner<JSWebAssemblyInstance>();
     JSGlobalObject* globalObject = jsInstance->globalObject();
     VM& vm = globalObject->vm();
@@ -1051,14 +1050,8 @@ JSC_DEFINE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, Slow
     void* payload = nullptr;
     if (JSWebAssemblyException* wasmException = jsDynamicCast<JSWebAssemblyException*>(thrownValue))
         payload = bitwise_cast<void*>(wasmException->payload().data());
-    return encodeResult(bitwise_cast<void*>(JSValue::encode(thrownValue)), payload);
-#elif USE(JSVALUE32_64)
-    // Note: This function needs to return a pointer and a JSValue, so will need to
-    // change signature on JSVALE32_64, nevertheless, for now it's unused.
-    UNREACHABLE_FOR_PLATFORM();
-    UNUSED_PARAM(instance);
-    return { nullptr, nullptr };
-#endif
+    *encodedThrownValue = JSValue::encode(thrownValue);
+    return payload;
 }
 
 } } // namespace JSC::Wasm

@@ -30,7 +30,6 @@
 #include "IndexingType.h"
 #include "JITOperationValidation.h"
 #include "JSCJSValue.h"
-#include "SlowPathReturnType.h"
 #include "WasmExceptionType.h"
 #include "WasmOSREntryData.h"
 
@@ -95,7 +94,7 @@ JSC_DECLARE_JIT_OPERATION(operationWasmThrow, void*, (Instance*, CallFrame*, uns
 JSC_DECLARE_JIT_OPERATION(operationWasmRethrow, void*, (Instance*, CallFrame*, EncodedJSValue thrownValue));
 
 JSC_DECLARE_JIT_OPERATION(operationWasmToJSException, void*, (CallFrame*, Wasm::ExceptionType, Instance*));
-JSC_DECLARE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, SlowPathReturnType , (Instance*));
+JSC_DECLARE_JIT_OPERATION(operationWasmRetrieveAndClearExceptionIfCatchable, void*, (Instance*, EncodedJSValue*));
 
 } } // namespace JSC::Wasm
 
