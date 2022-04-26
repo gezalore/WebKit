@@ -710,7 +710,9 @@ private:
                     resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.tmp()));
                     break;
                 }
-                case B3::ValueRep::SomeRegister: {
+                case B3::ValueRep::SomeRegister:
+                case B3::ValueRep::WarmAny:
+                {
 #if USE(JSVALUE32_64)
                     if (result.isGPPair()) {
                         RELEASE_ASSERT_NOT_REACHED();
@@ -3549,9 +3551,9 @@ Tmp AirIRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned ex
 
     if (ControlType::isTry(data)) {
         if (kind == CatchKind::Catch)
-            data.convertTryToCatch(++m_callSiteIndex, gPtr());
+            data.convertTryToCatch(++m_callSiteIndex, g64());
         else
-            data.convertTryToCatchAll(++m_callSiteIndex, gPtr());
+            data.convertTryToCatchAll(++m_callSiteIndex, g64());
     }
     // We convert from "try" to "catch" ControlType above. This doesn't
     // happen if ControlType is already a "catch". This can happen when
@@ -3579,28 +3581,55 @@ Tmp AirIRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned ex
             loadFromScratchBuffer(tmp);
     });
 
-    B3::PatchpointValue* patch = addPatchpoint(m_proc.addTuple({ B3::pointerType(), B3::pointerType() }));
+    Vector<B3::Type> resultTypes {
+        B3::pointerType(),
+#if USE(JSVALUE64)
+        B3::Int64
+#elif USE(JSVALUE32_64)
+        B3::Int32, B3::Int32
+#endif
+    };
+    B3::PatchpointValue* patch = addPatchpoint(m_proc.addTuple(WTFMove(resultTypes)));
     patch->effects.exitsSideways = true;
     patch->clobber(RegisterSet::macroScratchRegisters());
     RegisterSet clobberLate = RegisterSet::volatileRegistersForJSCall();
     clobberLate.add(GPRInfo::argumentGPR0);
+    clobberLate.add(GPRInfo::argumentGPR1);
     patch->clobberLate(clobberLate);
     patch->resultConstraints.append(B3::ValueRep::reg(GPRInfo::returnValueGPR));
-    patch->resultConstraints.append(B3::ValueRep::reg(GPRInfo::returnValueGPR2));
+    patch->resultConstraints.append(B3::ValueRep::SomeRegister);
+    if constexpr (is32Bit())
+        patch->resultConstraints.append(B3::ValueRep::WarmAny);
     patch->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
-        jit.move(params[2].gpr(), GPRInfo::argumentGPR0);
+        // Returning one EncodedJSValue on the stack
+        constexpr int32_t resultSpace = WTF::roundUpToMultipleOf<stackAlignmentBytes()>(static_cast<int32_t>(sizeof(EncodedJSValue)));
+        jit.subPtr(CCallHelpers::TrustedImm32(resultSpace), MacroAssembler::stackPointerRegister);
+        jit.move(params[is64Bit() ? 2 : 3].gpr(), GPRInfo::argumentGPR0);
+        jit.move(MacroAssembler::stackPointerRegister, GPRInfo::argumentGPR1);
         CCallHelpers::Call call = jit.call(OperationPtrTag);
         jit.addLinkTask([call] (LinkBuffer& linkBuffer) {
             linkBuffer.link(call, FunctionPtr<OperationPtrTag>(operationWasmRetrieveAndClearExceptionIfCatchable));
         });
+#if USE(JSVALUE32_64)
+        if (params[2].isReg())
+            jit.load32(CCallHelpers::Address(MacroAssembler::stackPointerRegister, TagOffset), params[2].gpr());
+        else {
+            jit.load32(CCallHelpers::Address(MacroAssembler::stackPointerRegister, TagOffset), params[1].gpr());
+            jit.store32(params[1].gpr(), CCallHelpers::Address(GPRInfo::callFrameRegister, params[2].offsetFromFP()));
+        }
+#endif
+        jit.loadPtr(CCallHelpers::Address(MacroAssembler::stackPointerRegister, PayloadOffset), params[1].gpr());
+        jit.addPtr(CCallHelpers::TrustedImm32(resultSpace), MacroAssembler::stackPointerRegister);
     });
-
-    TypedTmp exception = TypedTmp(Tmp(GPRInfo::returnValueGPR), is64Bit() ? Types::I64 : Types::I32);
-    TypedTmp buffer = TypedTmp(Tmp(GPRInfo::returnValueGPR2), is64Bit() ? Types::I64 : Types::I32);
-    emitPatchpoint(m_currentBlock, patch, Vector<TypedTmp, 8>::from(exception, buffer), Vector<ConstrainedTmp, 1>::from(instanceValue()));
-    append(Move, exception, data.exception());
-
+    TypedTmp buffer = TypedTmp(Tmp(GPRInfo::returnValueGPR), is64Bit() ? Types::I64 : Types::I32);
+#if USE(JSVALUE64)
+    emitPatchpoint(m_currentBlock, patch, Vector<TypedTmp, 8>::from(buffer, data.exception()), Vector<ConstrainedTmp, 1>::from(instanceValue()));
+#elif USE(JSVALUE32_64)
+    TypedTmp exceptionLo = TypedTmp(data.exception().lo(), Types::I32);
+    TypedTmp exceptionHi = TypedTmp(data.exception().hi(), Types::I32);
+    emitPatchpoint(m_currentBlock, patch, Vector<TypedTmp, 8>::from(buffer, exceptionLo, exceptionHi), Vector<ConstrainedTmp, 1>::from(instanceValue()));
+#endif
     return buffer;
 }
 
@@ -6247,9 +6276,17 @@ PatchpointExceptionHandle AirIRGenerator::preparePatchpointForExceptions(B3::Pat
         return { };
 
     unsigned numLiveValues = 0;
-    forEachLiveValue([&] (Tmp tmp) {
+    forEachLiveValue([&] (TypedTmp tmp) {
         ++numLiveValues;
-        args.append(ConstrainedTmp(tmp, B3::ValueRep::LateColdAny));
+#if USE(JSVALUE32_64)
+        if (tmp.isGPPair()) {
+            ++numLiveValues;
+            args.append(ConstrainedTmp(tmp.lo(), B3::ValueRep::LateColdAny));
+            args.append(ConstrainedTmp(tmp.hi(), B3::ValueRep::LateColdAny));
+            return;
+        }
+#endif
+        args.append(ConstrainedTmp(tmp.tmp(), B3::ValueRep::LateColdAny));
     });
 
     patch->effects.exitsSideways = true;
