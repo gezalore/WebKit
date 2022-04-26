@@ -47,7 +47,10 @@ static void defaultPrologueGenerator(CCallHelpers& jit, Code& code)
     jit.emitFunctionPrologue();
     if (code.frameSize()) {
         AllowMacroScratchRegisterUsageIf allowScratch(jit, isARM64() || isARM());
-        jit.addPtr(MacroAssembler::TrustedImm32(-code.frameSize()), MacroAssembler::framePointerRegister,  MacroAssembler::stackPointerRegister);
+        unsigned adjustmentForAlignment = 0;
+        if (constexpr unsigned excess = sizeof(CallerFrameAndPC) % stackAlignmentBytes())
+            adjustmentForAlignment = stackAlignmentBytes() - excess;
+        jit.subPtr(MacroAssembler::TrustedImm32(code.frameSize() + adjustmentForAlignment), MacroAssembler::stackPointerRegister);
     }
     
     jit.emitSave(code.calleeSaveRegisterAtOffsetList());
