@@ -2600,7 +2600,7 @@ PatchpointExceptionHandle B3IRGenerator::preparePatchpointForExceptions(BasicBlo
 auto B3IRGenerator::addCatchToUnreachable(unsigned exceptionIndex, const TypeDefinition& signature, ControlType& data, ResultList& results) -> PartialResult
 {
     Value* operationResult = emitCatchImpl(CatchKind::Catch, data, exceptionIndex);
-    Value* payload = m_currentBlock->appendNew<ExtractValue>(m_proc, origin(), pointerType(), operationResult, 1);
+    Value* payload = m_currentBlock->appendNew<ExtractValue>(m_proc, origin(), pointerType(), operationResult, 0);
     for (unsigned i = 0; i < signature.as<FunctionSignature>()->argumentCount(); ++i) {
         Type type = signature.as<FunctionSignature>()->argumentType(i);
         Value* value = m_currentBlock->appendNew<MemoryValue>(m_proc, Load, toB3Type(type), origin(), payload, i * sizeof(uint64_t));
@@ -2658,25 +2658,36 @@ Value* B3IRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned 
         connectControlAtEntrypoint(indexInBuffer, pointer, controlData, expressionStack, data);
     }
 
-    PatchpointValue* result = m_currentBlock->appendNew<PatchpointValue>(m_proc, m_proc.addTuple({ pointerType(), pointerType() }), origin());
+    PatchpointValue* result = m_currentBlock->appendNew<PatchpointValue>(m_proc, m_proc.addTuple({ pointerType(), B3::Int64 }), origin());
     result->effects.exitsSideways = true;
     result->clobber(RegisterSet::macroScratchRegisters());
     RegisterSet clobberLate = RegisterSet::volatileRegistersForJSCall();
     clobberLate.add(GPRInfo::argumentGPR0);
+    clobberLate.add(GPRInfo::argumentGPR1);
     result->clobberLate(clobberLate);
     result->append(instanceValue(), ValueRep::SomeRegister);
     result->resultConstraints.append(ValueRep::reg(GPRInfo::returnValueGPR));
-    result->resultConstraints.append(ValueRep::reg(GPRInfo::returnValueGPR2));
+    result->resultConstraints.append(B3::ValueRep::SomeRegister);
     result->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
+        // Returning one EncodedJSValue on the stack
+        constexpr int32_t resultSpace = WTF::roundUpToMultipleOf<stackAlignmentBytes()>(static_cast<int32_t>(sizeof(EncodedJSValue)));
+        jit.subPtr(CCallHelpers::TrustedImm32(resultSpace), MacroAssembler::stackPointerRegister);
         jit.move(params[2].gpr(), GPRInfo::argumentGPR0);
+        jit.move(MacroAssembler::stackPointerRegister, GPRInfo::argumentGPR1);
         CCallHelpers::Call call = jit.call(OperationPtrTag);
         jit.addLinkTask([call] (LinkBuffer& linkBuffer) {
             linkBuffer.link(call, FunctionPtr<OperationPtrTag>(operationWasmRetrieveAndClearExceptionIfCatchable));
         });
+#if USE(JSVALUE64)
+        jit.loadValue(CCallHelpers::Address(MacroAssembler::stackPointerRegister), JSValueRegs{params[1].gpr()});
+#elif USE(JSVALUE32_64)
+        UNREACHABLE_FOR_PLATFORM(); // See WasmAirIRGenerator::emitCatchImpl
+#endif
+        jit.addPtr(CCallHelpers::TrustedImm32(resultSpace), MacroAssembler::stackPointerRegister);
     });
 
-    Value* exception = m_currentBlock->appendNew<ExtractValue>(m_proc, origin(), pointerType(), result, 0);
+    Value* exception = m_currentBlock->appendNew<ExtractValue>(m_proc, origin(), B3::Int64, result, 1);
     set(data.exception(), exception);
 
     return result;
