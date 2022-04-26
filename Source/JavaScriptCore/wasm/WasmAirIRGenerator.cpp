@@ -3654,12 +3654,24 @@ auto AirIRGenerator::addRethrow(unsigned, ControlType& data) -> PartialResult
     Vector<ConstrainedTmp, 3> patchArgs;
     patchArgs.append(ConstrainedTmp(instanceValue(), B3::ValueRep::reg(GPRInfo::argumentGPR0)));
     patchArgs.append(ConstrainedTmp(Tmp(GPRInfo::callFrameRegister), B3::ValueRep::reg(GPRInfo::argumentGPR1)));
+#if USE(JSVALUE64)
     patchArgs.append(ConstrainedTmp(data.exception(), B3::ValueRep::reg(GPRInfo::argumentGPR2)));
+#elif USE(JSVALUE32_64)
+    if (data.exception().isGPPair()){
+        patchArgs.append(ConstrainedTmp(data.exception().lo(), B3::ValueRep::reg(GPRInfo::argumentGPR2)));
+        patchArgs.append(ConstrainedTmp(data.exception().hi(), B3::ValueRep::reg(GPRInfo::argumentGPR3)));
+    } else {
+        patchArgs.append(ConstrainedTmp(data.exception().tmp(), B3::ValueRep::reg(GPRInfo::argumentGPR2)));
+    }
+#endif
 
+    bool isI32 = data.exception().type().isI32();
     PatchpointExceptionHandle handle = preparePatchpointForExceptions(patch, patchArgs);
-    patch->setGenerator([this, handle] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+    patch->setGenerator([this, isI32, handle] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
         handle.generate(jit, params, this);
+        if (is32Bit() && isI32)
+            jit.move(CCallHelpers::TrustedImm32(0), GPRInfo::argumentGPR3);
         emitRethrowImpl(jit);
     });
 
