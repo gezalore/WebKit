@@ -1294,13 +1294,11 @@ B3::Type AirIRGenerator::toB3ResultType(BlockSignature returnType)
         Vector<B3::Type> result;
         for (unsigned i = 0; i < signature->returnCount(); ++i) {
             Type type = signature->returnType(i);
-#if USE(JSVALUE32_64)
-            if (type.isG64()) {
+            if (is32Bit() && type.isG64()) {
                 result.append(B3::Int32);
                 result.append(B3::Int32);
                 continue;
             }
-#endif
             result.append(toB3Type(type));
         }
         return m_proc.addTuple(WTFMove(result));
