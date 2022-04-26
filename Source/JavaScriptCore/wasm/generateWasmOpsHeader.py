@@ -259,7 +259,6 @@ struct Type {
     FOR_EACH_WASM_TYPE_EXCEPT_FUNCREF_AND_EXTERNREF(CREATE_PREDICATE)
     #undef CREATE_PREDICATE
     
-#if USE(JSVALUE32_64)
     bool isG64() const
     {
         switch(kind) {
@@ -273,7 +272,6 @@ struct Type {
             return false;
         }
     }
-#endif
 };
 
 namespace Types

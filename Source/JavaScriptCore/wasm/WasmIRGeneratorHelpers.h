@@ -181,7 +181,7 @@ static inline void emitCatchPrologueShared(B3::Air::Code& code, CCallHelpers& ji
     jit.restoreCalleeSavesFromVMEntryFrameCalleeSavesBuffer(GPRInfo::regT0, GPRInfo::regT3);
 
     {
-        CCallHelpers::Address calleeForWasmCatch { GPRInfo::regT0, VM::calleeForWasmCatchOffset() };
+        CCallHelpers::Address calleeForWasmCatch { GPRInfo::regT0, static_cast<int32_t>(VM::calleeForWasmCatchOffset()) };
         CCallHelpers::Address calleeSlot { GPRInfo::callFrameRegister, CallFrameSlot::callee * sizeof(Register) };
         JSValueRegs tmp {
 #if USE(JSVALUE32_64)
