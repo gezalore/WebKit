@@ -679,55 +679,30 @@ private:
             break;
         default: {
             ASSERT(results.size());
-            unsigned j = 0;
+            ASSERT(results.size() == patch->resultConstraints.size());
             for (unsigned i = 0; i < results.size(); ++i) {
-                const ExpressionType& result = results[i];
-                B3::ValueRep valueRep = patch->resultConstraints[j++];
-                switch (valueRep.kind()) {
+                ASSERT(!results[i].isGPPair()); // GP Pair types should have been broken down
+                switch (patch->resultConstraints[i].kind()) {
                 case B3::ValueRep::StackArgument: {
-                    Arg arg = Arg::callArg(valueRep.offsetFromSP());
+                    Arg arg = Arg::callArg(patch->resultConstraints[i].offsetFromSP());
                     inst.args.append(arg);
-#if USE(JSVALUE32_64)
-                    if (result.isGPPair()) {
-                        RELEASE_ASSERT_NOT_REACHED();
-                        break;
-                    }
-#endif
-                    resultMovs.append(Inst(B3::Air::moveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, arg, result.tmp()));
+                    resultMovs.append(Inst(B3::Air::moveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, arg, results[i].tmp()));
                     break;
                 }
                 case B3::ValueRep::Register: {
-#if USE(JSVALUE32_64)
-                    if (result.isGPPair()) {
-                        inst.args.append(Tmp(valueRep.reg()));
-                        resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.lo()));
-                        valueRep = patch->resultConstraints[j++];
-                        inst.args.append(Tmp(valueRep.reg()));
-                        resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.hi()));
-                        break;
-                    }
-#endif
-                    inst.args.append(Tmp(valueRep.reg()));
-                    resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(valueRep.reg()), result.tmp()));
+                    inst.args.append(Tmp(patch->resultConstraints[i].reg()));
+                    resultMovs.append(Inst(B3::Air::relaxedMoveForType(m_proc.typeAtOffset(patch->type(), i)), nullptr, Tmp(patch->resultConstraints[i].reg()), results[i].tmp()));
                     break;
                 }
                 case B3::ValueRep::SomeRegister:
-                case B3::ValueRep::WarmAny:
-                {
-#if USE(JSVALUE32_64)
-                    if (result.isGPPair()) {
-                        RELEASE_ASSERT_NOT_REACHED();
-                        break;
-                    }
-#endif
-                    inst.args.append(result.tmp());
+                case B3::ValueRep::WarmAny: {
+                    inst.args.append(results[i].tmp());
                     break;
                 }
                 default:
                     RELEASE_ASSERT_NOT_REACHED();
                 }
             }
-            ASSERT(j == patch->resultConstraints.size());
         }
         }
 
@@ -1286,10 +1261,10 @@ B3::Type AirIRGenerator::toB3ResultType(BlockSignature returnType)
 {
     auto signature = returnType->as<FunctionSignature>();
 
-    // TODO: only GPR I64s are passed as I32s
     if (signature->returnsVoid())
         return B3::Void;
 
+    // On 32-bit platforms, 64-bit integer types are returned as two 32-bit values
     if (signature->returnCount() == 1 && (is64Bit() || !signature->returnType(0).isG64()))
         return toB3Type(signature->returnType(0));
 
@@ -3918,51 +3893,59 @@ std::pair<B3::PatchpointValue*, PatchpointExceptionHandle> AirIRGenerator::emitC
     ASSERT(locations.params.size() == args.size());
     ASSERT(locations.results.size() == results.size());
 
+    // On 32-bit platforms, 64-bit integer types are passed as two 32-bit values
     size_t offset = patchArgs.size();
-    size_t argConstraints = args.size();
+    size_t passedArgs = args.size();
 #if USE(JSVALUE32_64)
     for (unsigned i = 0; i < args.size(); ++i) {
-        if (args[i].isGPPair() && locations.params[i].isGPR())
-            ++argConstraints;
+        if (args[i].isGPPair())
+            ++passedArgs;
     }
 #endif
-    Checked<size_t> newSize = checkedSum<size_t>(patchArgs.size(), argConstraints);
+    Checked<size_t> newSize = checkedSum<size_t>(patchArgs.size(), passedArgs);
     RELEASE_ASSERT(!newSize.hasOverflowed());
-
     patchArgs.grow(newSize);
     unsigned j = 0;
     for (unsigned i = 0; i < args.size(); ++i) {
         const TypedTmp& arg = args[i];
         ValueLocation& loc = locations.params[i];
 #if USE(JSVALUE32_64)
-        if (arg.isGPPair() && loc.isGPR()) {
-            patchArgs[offset + j++] = ConstrainedTmp(arg.lo(), B3::ValueRep(loc.jsr().payloadGPR()));
-            patchArgs[offset + j++] = ConstrainedTmp(arg.hi(), B3::ValueRep(loc.jsr().tagGPR()));
+        if (arg.isGPPair()) {
+            B3::ValueRep valueRepLo = loc.isGPR() ? B3::ValueRep(loc.jsr().payloadGPR()) : B3::ValueRep::stackArgument(loc.offsetFromSP());
+            B3::ValueRep valueRepHi = loc.isGPR() ? B3::ValueRep(loc.jsr().tagGPR()) : B3::ValueRep::stackArgument(loc.offsetFromSP() + 4);
+            patchArgs[offset + j++] = ConstrainedTmp(arg.lo(), valueRepLo);
+            patchArgs[offset + j++] = ConstrainedTmp(arg.hi(), valueRepHi);
             continue;
         }
 #endif
         patchArgs[offset + j++] = ConstrainedTmp(arg, loc);
     }
-    ASSERT(j == argConstraints);
+    ASSERT(j == passedArgs);
 
+    // On 32-bit platforms, 64-bit integer types are returned as two 32-bit values
+    ResultList patchResults;
     if (patchpoint->type() != B3::Void) {
         Vector<B3::ValueRep, 1> resultConstraints;
         for (unsigned i = 0; i < results.size(); ++i) {
+            const TypedTmp& result = results[i];
             ValueLocation& loc = locations.results[i];
 #if USE(JSVALUE32_64)
-            const TypedTmp& result = results[i];
-            if (result.isGPPair() && loc.isGPR()) {
-                resultConstraints.append(B3::ValueRep(loc.jsr().payloadGPR()));
-                resultConstraints.append(B3::ValueRep(loc.jsr().tagGPR()));
+            if (result.isGPPair()) {
+                patchResults.append(TypedTmp { result.lo(), Types::I32 });
+                patchResults.append(TypedTmp { result.hi(), Types::I32 });
+                resultConstraints.append(loc.isGPR() ? B3::ValueRep(loc.jsr().payloadGPR()) : B3::ValueRep::stackArgument(loc.offsetFromSP()));
+                resultConstraints.append(loc.isGPR() ? B3::ValueRep(loc.jsr().tagGPR()) : B3::ValueRep::stackArgument(loc.offsetFromSP() + 4));
                 continue;
             }
 #endif
+            patchResults.append(result);
             resultConstraints.append(B3::ValueRep(loc));
         }
         patchpoint->resultConstraints = WTFMove(resultConstraints);
-    }
+    } else
+        ASSERT(!results.size());
     PatchpointExceptionHandle exceptionHandle = preparePatchpointForExceptions(patchpoint, patchArgs);
-    emitPatchpoint(block, patchpoint, results, WTFMove(patchArgs));
+    emitPatchpoint(block, patchpoint, patchResults, WTFMove(patchArgs));
     return { patchpoint, exceptionHandle };
 }
 
