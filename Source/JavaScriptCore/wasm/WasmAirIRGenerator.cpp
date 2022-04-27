@@ -3624,8 +3624,16 @@ auto AirIRGenerator::addThrow(unsigned exceptionIndex, Vector<ExpressionType>& a
     Vector<ConstrainedTmp, 8> patchArgs;
     patchArgs.append(ConstrainedTmp(instanceValue(), B3::ValueRep::reg(GPRInfo::argumentGPR0)));
     patchArgs.append(ConstrainedTmp(Tmp(GPRInfo::callFrameRegister), B3::ValueRep::reg(GPRInfo::argumentGPR1)));
-    for (unsigned i = 0; i < args.size(); ++i)
+    for (unsigned i = 0; i < args.size(); ++i) {
+#if USE(JSVALUE32_64)
+        if (args[i].isGPPair()) {
+            patchArgs.append(ConstrainedTmp(args[i].lo(), B3::ValueRep::stackArgument(i * sizeof(EncodedJSValue) + PayloadOffset)));
+            patchArgs.append(ConstrainedTmp(args[i].hi(), B3::ValueRep::stackArgument(i * sizeof(EncodedJSValue) + TagOffset)));
+            continue;
+        }
+#endif
         patchArgs.append(ConstrainedTmp(args[i], B3::ValueRep::stackArgument(i * sizeof(EncodedJSValue))));
+    }
 
     PatchpointExceptionHandle handle = preparePatchpointForExceptions(patch, patchArgs);
 
