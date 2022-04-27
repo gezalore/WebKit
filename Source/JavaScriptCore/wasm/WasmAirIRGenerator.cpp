@@ -4145,11 +4145,19 @@ auto AirIRGenerator::addCallRef(const TypeDefinition& signature, Vector<Expressi
     });
 #endif
 
+    auto extractPtr = [](const TypedTmp& tmp) {
+#if USE(JSVALUE64)
+        return tmp.tmp();
+#elif USE(JSVALUE32_64)
+        return tmp.lo();
+#endif
+    };
+
     ExpressionType calleeCode = gPtr();
-    append(Move, Arg::addr(calleeFunction, WebAssemblyFunctionBase::offsetOfEntrypointLoadLocation()), calleeCode); // Pointer to callee code.
+    append(Move, Arg::addr(extractPtr(calleeFunction), WebAssemblyFunctionBase::offsetOfEntrypointLoadLocation()), calleeCode); // Pointer to callee code.
 
     auto calleeInstance = gPtr();
-    append(Move, Arg::addr(calleeFunction, WebAssemblyFunctionBase::offsetOfInstance()), calleeInstance);
+    append(Move, Arg::addr(extractPtr(calleeFunction), WebAssemblyFunctionBase::offsetOfInstance()), calleeInstance);
     append(Move, Arg::addr(calleeInstance, JSWebAssemblyInstance::offsetOfInstance()), calleeInstance);
 
     return emitIndirectCall(calleeInstance, calleeCode, signature, args, results);
