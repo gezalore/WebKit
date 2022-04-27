@@ -1156,51 +1156,27 @@ AirIRGenerator::AirIRGenerator(const ModuleInformation& info, B3::Procedure& pro
     m_mainEntrypointStart = m_code.addBlock();
     m_currentBlock = m_mainEntrypointStart;
 
+    CallInformation wasmCallInfo = wasmCallingConvention().callInformationFor(signature, CallRole::Callee);
+    ASSERT(wasmCallInfo.params.size() == signature.as<FunctionSignature>()->argumentCount());
     ASSERT(!m_locals.size());
-    m_locals.grow(signature.as<FunctionSignature>()->argumentCount());
+    m_locals.grow(wasmCallInfo.params.size());
     for (unsigned i = 0; i < signature.as<FunctionSignature>()->argumentCount(); ++i) {
         Type type = signature.as<FunctionSignature>()->argumentType(i);
-        m_locals[i] = tmpForType(type);
-    }
-
-    CallInformation wasmCallInfo = wasmCallingConvention().callInformationFor(signature, CallRole::Callee);
-
-    for (unsigned i = 0; i < wasmCallInfo.params.size(); ++i) {
         ValueLocation location = wasmCallInfo.params[i];
-        B3::ValueRep valueRep { location };
-        Arg arg = valueRep.isReg() ? Arg(Tmp(valueRep.reg())) : Arg::addr(Tmp(GPRInfo::callFrameRegister), valueRep.offsetFromFP() + PayloadOffset);
-#if USE(JSVALUE32_64)
-        Arg argHi;
-        if (location.isGPR())
-            argHi = Arg(Tmp(location.jsr().tagGPR()));
-        else if (location.isStack())
-            argHi = Arg::addr(Tmp(GPRInfo::callFrameRegister), valueRep.offsetFromFP() + TagOffset);
-#endif
-        switch (signature.as<FunctionSignature>()->argumentType(i).kind) {
-        case TypeKind::I32:
-            append(Move32, arg, m_locals[i]);
-            break;
-        case TypeKind::I64:
-        case TypeKind::Externref:
-        case TypeKind::Funcref:
-        case TypeKind::Ref:
-        case TypeKind::RefNull:
-        case TypeKind::Rtt:
+        m_locals[i] = tmpForType(type);
+        if (location.isStack())
+            emitLoad(Tmp(GPRInfo::callFrameRegister), location.offsetFromFP(), m_locals[i]);
+        else if (location.isFPR())
+            append(type.kind == TypeKind::F32 ? MoveFloat : MoveDouble, Tmp(location.fpr()), m_locals[i].tmp());
+        else if (type.kind == TypeKind::I32)
+            append(Move32, Tmp(location.jsr().payloadGPR()), m_locals[i].tmp());
+        else {
 #if USE(JSVALUE64)
-            append(Move, arg, m_locals[i]);
+            append(Move, Tmp(location.jsr().payloadGPR()), m_locals[i].tmp());
 #elif USE(JSVALUE32_64)
-            append(Move, argHi, m_locals[i].hi());
-            append(Move, arg, m_locals[i].lo());
+            append(Move, Tmp(location.jsr().payloadGPR()), m_locals[i].lo());
+            append(Move, Tmp(location.jsr().tagGPR()), m_locals[i].hi());
 #endif
-            break;
-        case TypeKind::F32:
-            append(MoveFloat, arg, m_locals[i]);
-            break;
-        case TypeKind::F64:
-            append(MoveDouble, arg, m_locals[i]);
-            break;
-        default:
-            RELEASE_ASSERT_NOT_REACHED();
         }
     }
 
