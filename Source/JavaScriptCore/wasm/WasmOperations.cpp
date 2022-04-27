@@ -724,7 +724,7 @@ static bool setWasmTableElement(Instance* instance, unsigned tableIndex, uint32_
     return true;
 }
 
-JSC_DEFINE_JIT_OPERATION(operationSetWasmTableElement, size_t, (Instance* instance, unsigned tableIndex, uint32_t signedIndex, EncodedJSValue encValue))
+JSC_DEFINE_JIT_OPERATION(operationSetWasmTableElement, uint32_t, (Instance* instance, unsigned tableIndex, uint32_t signedIndex, EncodedJSValue encValue))
 {
     return setWasmTableElement(instance, tableIndex, signedIndex, encValue);
 }
