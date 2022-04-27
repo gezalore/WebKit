@@ -1477,13 +1477,32 @@ auto AirIRGenerator::addTableGet(unsigned tableIndex, ExpressionType index, Expr
 
     ASSERT(index.type().isI32());
     result = tmpForType(m_info.tables[tableIndex].wasmType());
+    ASSERT(widthForType(toB3Type(result.type())) == B3::Width64);
 
     emitCCall(&operationGetWasmTableElement, result, instanceValue(), addConstant(Types::I32, tableIndex), index);
-    emitCheck([&] {
-        return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::Zero), result, result);
-    }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
-        this->emitThrowException(jit, ExceptionType::OutOfBoundsTableAccess);
-    });
+
+    {
+        BasicBlock* continuation = nullptr;
+        emitCheck([&] {
+#if USE(JSVALUE64)
+            return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::Zero), result, result);
+#elif USE(JSVALUE32_64)
+            BasicBlock* checkLo = m_code.addBlock();
+            continuation = m_code.addBlock();
+            append(BranchTest32, Arg::resCond(MacroAssembler::NonZero), result.hi(), result.hi());
+            m_currentBlock->setSuccessors(continuation, checkLo);
+            m_currentBlock = checkLo;
+            return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::Zero), result.lo(), result.lo());
+#endif
+        }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
+            this->emitThrowException(jit, ExceptionType::OutOfBoundsTableAccess);
+        });
+        if (continuation) {
+            append(Jump);
+            m_currentBlock->setSuccessors(continuation);
+            m_currentBlock = continuation;
+        }
+    }
 
     return { };
 }
@@ -4338,7 +4357,7 @@ void AirIRGenerator::emitChecksForModOrDiv(bool isSignedDiv, ExpressionType left
             return Inst(BranchTest32, nullptr, Arg::resCond(MacroAssembler::Zero), right, right);
         else {
 #if USE(JSVALUE64)
-             return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::Zero), right, right);
+            return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::Zero), right, right);
 #elif USE(JSVALUE32_64)
             BasicBlock* checkLo = m_code.addBlock();
             continuation = m_code.addBlock();
