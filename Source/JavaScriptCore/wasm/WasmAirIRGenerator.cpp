@@ -894,11 +894,14 @@ private:
     void emitMove(const TypedTmp& src, const TypedTmp& dst)
     {
         ASSERT(isSubtype(src.type(), dst.type()));
+#if USE(JSVALUE32_64)
         if (src.isGPPair()) {
             append(Move, src.lo(), dst.lo());
             append(Move, src.hi(), dst.hi());
-        } else
-            append(moveOpForValueType(src.type()), src, dst);
+            return;
+        }
+#endif
+        append(moveOpForValueType(src.type()), src, dst);
     }
 
     void emitThrowException(CCallHelpers&, ExceptionType);
@@ -3659,7 +3662,7 @@ auto AirIRGenerator::addRethrow(unsigned, ControlType& data) -> PartialResult
 #if USE(JSVALUE64)
     patchArgs.append(ConstrainedTmp(data.exception(), B3::ValueRep::reg(GPRInfo::argumentGPR2)));
 #elif USE(JSVALUE32_64)
-    if (data.exception().isGPPair()){
+    if (data.exception().isGPPair()) {
         patchArgs.append(ConstrainedTmp(data.exception().lo(), B3::ValueRep::reg(GPRInfo::argumentGPR2)));
         patchArgs.append(ConstrainedTmp(data.exception().hi(), B3::ValueRep::reg(GPRInfo::argumentGPR3)));
     } else {
