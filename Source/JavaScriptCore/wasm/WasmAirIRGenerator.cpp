@@ -891,6 +891,16 @@ private:
         append(moveOpForValueType(value.type()), value, Arg::addr(base, offset));
     }
 
+    void emitMove(const TypedTmp& src, const TypedTmp& dst)
+    {
+        ASSERT(isSubtype(src.type(), dst.type()));
+        if (src.isGPPair()) {
+            append(Move, src.lo(), dst.lo());
+            append(Move, src.hi(), dst.hi());
+        } else
+            append(moveOpForValueType(src.type()), src, dst);
+    }
+
     void emitThrowException(CCallHelpers&, ExceptionType);
 
     void emitEntryTierUpCheck();
@@ -1634,14 +1644,7 @@ auto AirIRGenerator::getLocal(uint32_t index, ExpressionType& result) -> Partial
     TypedTmp local = m_locals[index];
     ASSERT(local);
     result = tmpForType(local.type());
-#if USE(JSVALUE32_64)
-    if (local.isGPPair()) {
-        append(Move, local.hi(), result.hi());
-        append(Move, local.lo(), result.lo());
-        return { };
-    }
-#endif
-    append(moveOpForValueType(local.type()), local, result);
+    emitMove(local, result);
     return { };
 }
 
@@ -1771,14 +1774,7 @@ auto AirIRGenerator::setLocal(uint32_t index, ExpressionType value) -> PartialRe
 {
     TypedTmp local = m_locals[index];
     ASSERT(local);
-#if USE(JSVALUE32_64)
-    if (local.isGPPair()) {
-        append(Move, value.hi(), local.hi());
-        append(Move, value.lo(), local.lo());
-        return { };
-    }
-#endif
-    append(moveOpForValueType(local.type()), value, local);
+    emitMove(value, local);
     return { };
 }
 
@@ -3249,18 +3245,18 @@ auto AirIRGenerator::addSelect(ExpressionType condition, ExpressionType nonZero,
 {
     ASSERT(nonZero.type() == zero.type());
     result = tmpForType(nonZero.type());
-    append(moveOpForValueType(nonZero.type()), nonZero, result);
 
     BasicBlock* isZero = m_code.addBlock();
     BasicBlock* continuation = m_code.addBlock();
 
+    emitMove(nonZero, result);
     append(BranchTest32, Arg::resCond(MacroAssembler::Zero), condition, condition);
     m_currentBlock->setSuccessors(isZero, continuation);
+    m_currentBlock = isZero;
 
-    append(isZero, moveOpForValueType(zero.type()), zero, result);
-    append(isZero, Jump);
+    emitMove(zero, result);
+    append(Jump);
     isZero->setSuccessors(continuation);
-
     m_currentBlock = continuation;
 
     return { };
@@ -4243,16 +4239,7 @@ auto AirIRGenerator::emitIndirectCall(TypedTmp calleeInstance, ExpressionType ca
 
 void AirIRGenerator::unify(const ExpressionType dst, const ExpressionType source)
 {
-    ASSERT(isSubtype(source.type(), dst.type()));
-#if USE(JSVALUE32_64)
-    if (source.isGPPair()) {
-        ASSERT(dst.isGPPair());
-        append(Move, source.lo(), dst.lo());
-        append(Move, source.hi(), dst.hi());
-        return;
-    }
-#endif
-    append(moveOpForValueType(dst.type()), source, dst);
+    emitMove(source, dst);
 }
 
 void AirIRGenerator::unifyValuesWithBlock(const Stack& resultStack, const ResultList& result)
