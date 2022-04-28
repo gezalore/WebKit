@@ -1966,25 +1966,34 @@ inline AirIRGenerator::ExpressionType AirIRGenerator::emitCheckAndPreparePointer
         Tmp boundsCheckingSize { m_boundsCheckingSizeGPR };
 #endif
         ASSERT(sizeOfOperation + offset > offset);
-        auto temp = gPtr();
-        append(Move, Arg::bigImm(static_cast<uint64_t>(sizeOfOperation) + offset - 1), temp);
-        append(AddPtr, result, temp);
 
+        auto temp = gPtr();
+#if USE(JSVALUE32_64)
+        if (offset) {
+            append(Move, Arg::bigImm(offset), temp);
+            append(AddPtr, result, temp);
+            emitCheck([&] {
+                return Inst(Branch32, nullptr, Arg::relCond(MacroAssembler::Below), temp, result);
+            }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
+                this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
+            });
+        }
+        if (sizeOfOperation > 1) {
+            append(AddPtr, Arg::imm(sizeOfOperation - 1), offset ? temp : result , temp);
+            emitCheck([&] {
+                return Inst(Branch32, nullptr, Arg::relCond(MacroAssembler::Below), temp, result);
+            }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
+                this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
+            });
+        }
+#endif
+        append(Move, Arg::bigImm(static_cast<uint64_t>(offset) + sizeOfOperation - 1), temp);
+        append(AddPtr, result, temp);
         emitCheck([&] {
             return Inst(is64Bit() ? Branch64 : Branch32, nullptr, Arg::relCond(MacroAssembler::AboveOrEqual), temp, boundsCheckingSize);
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
-
-#if USE(JSVALUE32_64)
-        append(Move, Arg::bigImm(offset), temp);
-        append(AddPtr, result, temp);
-        emitCheck([&] {
-            return Inst(Branch32, nullptr, Arg::relCond(MacroAssembler::Below), temp, result);
-        }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
-            this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
-        });
-#endif
         break;
     }
 
