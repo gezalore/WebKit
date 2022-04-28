@@ -292,14 +292,17 @@ JSC_DECLARE_JIT_OPERATION(jsRoundDouble, double, (double));
 JSC_DECLARE_JIT_OPERATION(roundFloat, float, (float));
 
 #if USE(JSVALUE32_64)
-JSC_DECLARE_JIT_OPERATION(i32_div_s, int32_t, (int32_t a, int32_t b));
-JSC_DECLARE_JIT_OPERATION(i32_div_u, uint32_t, (uint32_t a, uint32_t b));
-JSC_DECLARE_JIT_OPERATION(i32_rem_s, int32_t, (int32_t a, int32_t b));
-JSC_DECLARE_JIT_OPERATION(i32_rem_u, uint32_t, (uint32_t a, uint32_t b));
-JSC_DECLARE_JIT_OPERATION(i64_div_s, int64_t, (int64_t a, int64_t b));
-JSC_DECLARE_JIT_OPERATION(i64_div_u, uint64_t, (uint64_t a, uint64_t b));
-JSC_DECLARE_JIT_OPERATION(i64_rem_s, int64_t, (int64_t a, int64_t b));
-JSC_DECLARE_JIT_OPERATION(i64_rem_u, uint64_t, (uint64_t a, uint64_t b));
+JSC_DECLARE_JIT_OPERATION(f32_nearest, float, (float));
+JSC_DECLARE_JIT_OPERATION(f64_nearest, double, (double));
+
+JSC_DECLARE_JIT_OPERATION(i32_div_s, int32_t, (int32_t, int32_t));
+JSC_DECLARE_JIT_OPERATION(i32_div_u, uint32_t, (uint32_t, uint32_t));
+JSC_DECLARE_JIT_OPERATION(i32_rem_s, int32_t, (int32_t, int32_t));
+JSC_DECLARE_JIT_OPERATION(i32_rem_u, uint32_t, (uint32_t, uint32_t));
+JSC_DECLARE_JIT_OPERATION(i64_div_s, int64_t, (int64_t, int64_t));
+JSC_DECLARE_JIT_OPERATION(i64_div_u, uint64_t, (uint64_t, uint64_t));
+JSC_DECLARE_JIT_OPERATION(i64_rem_s, int64_t, (int64_t, int64_t));
+JSC_DECLARE_JIT_OPERATION(i64_rem_u, uint64_t, (uint64_t, uint64_t));
 
 JSC_DECLARE_JIT_OPERATION(i64_trunc_u_f32, uint64_t, (float));
 JSC_DECLARE_JIT_OPERATION(i64_trunc_s_f32, int64_t, (float));
