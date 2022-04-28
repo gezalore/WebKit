@@ -138,6 +138,7 @@ void lowerStackArgs(Code& code)
                         return result;
 #elif CPU(ARM)
                         // We solve this from the macro assembler for now
+                        UNUSED_PARAM(instIndex);
                         return result;
 #elif CPU(X86_64)
                         UNUSED_PARAM(instIndex);
