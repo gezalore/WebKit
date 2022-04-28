@@ -43,6 +43,7 @@
 #include "BinarySwitch.h"
 #include "JSCJSValueInlines.h"
 #include "JSWebAssemblyInstance.h"
+#include "MathCommon.h"
 #include "ScratchRegisterAllocator.h"
 #include "WasmBranchHints.h"
 #include "WasmCallingConvention.h"
@@ -3164,70 +3165,94 @@ auto AirIRGenerator::truncSaturated(Ext1OpType op, ExpressionType arg, Expressio
     append(maxCase, Jump);
     maxCase->setSuccessors(continuation);
 
-    Vector<ConstrainedTmp, 2> args;
-    auto* patchpoint = addPatchpoint(toB3Type(returnType));
-    patchpoint->effects = B3::Effects::none();
-    args.append(arg);
-    if (requiresMacroScratchRegisters) {
-        patchpoint->clobber(RegisterSet::macroScratchRegisters());
-        if (isX86()) {
-            args.append(signBitConstant);
-            patchpoint->numFPScratchRegisters = 1;
+    if (is64Bit() || result.type().isI32()) {
+        Vector<ConstrainedTmp, 2> args;
+        auto* patchpoint = addPatchpoint(toB3Type(returnType));
+        patchpoint->effects = B3::Effects::none();
+        args.append(arg);
+        if (requiresMacroScratchRegisters) {
+            patchpoint->clobber(RegisterSet::macroScratchRegisters());
+            if (isX86()) {
+                args.append(signBitConstant);
+                patchpoint->numFPScratchRegisters = 1;
+            }
         }
-    }
 
-    patchpoint->effects = B3::Effects::none();
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+        patchpoint->effects = B3::Effects::none();
+        patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+            switch (op) {
+            case Ext1OpType::I32TruncSatF32S:
+                jit.truncateFloatToInt32(params[1].fpr(), params[0].gpr());
+                break;
+            case Ext1OpType::I32TruncSatF32U:
+                jit.truncateFloatToUint32(params[1].fpr(), params[0].gpr());
+                break;
+            case Ext1OpType::I32TruncSatF64S:
+                jit.truncateDoubleToInt32(params[1].fpr(), params[0].gpr());
+                break;
+            case Ext1OpType::I32TruncSatF64U:
+                jit.truncateDoubleToUint32(params[1].fpr(), params[0].gpr());
+                break;
+#if USE(JSVALUE64)
+            case Ext1OpType::I64TruncSatF32S:
+                jit.truncateFloatToInt64(params[1].fpr(), params[0].gpr());
+                break;
+            case Ext1OpType::I64TruncSatF32U: {
+                AllowMacroScratchRegisterUsage allowScratch(jit);
+                ASSERT(requiresMacroScratchRegisters);
+                FPRReg scratch = InvalidFPRReg;
+                FPRReg constant = InvalidFPRReg;
+                if (isX86()) {
+                    scratch = params.fpScratch(0);
+                    constant = params[2].fpr();
+                }
+                jit.truncateFloatToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
+                break;
+            }
+            case Ext1OpType::I64TruncSatF64S:
+                jit.truncateDoubleToInt64(params[1].fpr(), params[0].gpr());
+                break;
+            case Ext1OpType::I64TruncSatF64U: {
+                AllowMacroScratchRegisterUsage allowScratch(jit);
+                ASSERT(requiresMacroScratchRegisters);
+                FPRReg scratch = InvalidFPRReg;
+                FPRReg constant = InvalidFPRReg;
+                if (isX86()) {
+                    scratch = params.fpScratch(0);
+                    constant = params[2].fpr();
+                }
+                jit.truncateDoubleToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
+                break;
+            }
+#endif
+            default:
+                RELEASE_ASSERT_NOT_REACHED();
+                break;
+            }
+        });
+
+        emitPatchpoint(inBoundsCase, patchpoint, Vector<TypedTmp, 8> { result }, WTFMove(args));
+    } else {
         switch (op) {
-        case Ext1OpType::I32TruncSatF32S:
-            jit.truncateFloatToInt32(params[1].fpr(), params[0].gpr());
-            break;
-        case Ext1OpType::I32TruncSatF32U:
-            jit.truncateFloatToUint32(params[1].fpr(), params[0].gpr());
-            break;
-        case Ext1OpType::I32TruncSatF64S:
-            jit.truncateDoubleToInt32(params[1].fpr(), params[0].gpr());
-            break;
-        case Ext1OpType::I32TruncSatF64U:
-            jit.truncateDoubleToUint32(params[1].fpr(), params[0].gpr());
-            break;
+#if USE(JSVALUE32_64)
         case Ext1OpType::I64TruncSatF32S:
-            jit.truncateFloatToInt64(params[1].fpr(), params[0].gpr());
+            emitCCall(inBoundsCase, Math::i64_trunc_s_f32, result, arg);
             break;
-        case Ext1OpType::I64TruncSatF32U: {
-            AllowMacroScratchRegisterUsage allowScratch(jit);
-            ASSERT(requiresMacroScratchRegisters);
-            FPRReg scratch = InvalidFPRReg;
-            FPRReg constant = InvalidFPRReg;
-            if (isX86()) {
-                scratch = params.fpScratch(0);
-                constant = params[2].fpr();
-            }
-            jit.truncateFloatToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
+        case Ext1OpType::I64TruncSatF32U:
+            emitCCall(inBoundsCase, Math::i64_trunc_u_f32, result, arg);
             break;
-        }
         case Ext1OpType::I64TruncSatF64S:
-            jit.truncateDoubleToInt64(params[1].fpr(), params[0].gpr());
+            emitCCall(inBoundsCase, Math::i64_trunc_s_f64, result, arg);
             break;
-        case Ext1OpType::I64TruncSatF64U: {
-            AllowMacroScratchRegisterUsage allowScratch(jit);
-            ASSERT(requiresMacroScratchRegisters);
-            FPRReg scratch = InvalidFPRReg;
-            FPRReg constant = InvalidFPRReg;
-            if (isX86()) {
-                scratch = params.fpScratch(0);
-                constant = params[2].fpr();
-            }
-            jit.truncateDoubleToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
+        case Ext1OpType::I64TruncSatF64U:
+            emitCCall(inBoundsCase, Math::i64_trunc_u_f64, result, arg);
             break;
-        }
+#endif
         default:
             RELEASE_ASSERT_NOT_REACHED();
             break;
         }
-    });
-
-    emitPatchpoint(inBoundsCase, patchpoint, Vector<TypedTmp, 8> { result }, WTFMove(args));
+    }
     append(inBoundsCase, Jump);
     inBoundsCase->setSuccessors(continuation);
 
@@ -4407,8 +4432,20 @@ void AirIRGenerator::emitChecksForModOrDiv(bool isSignedDiv, ExpressionType left
 }
 
 namespace {
-template<typename IntType> IntType softDiv(IntType a, IntType b) { return a / b ;}
-template<typename IntType> IntType softMod(IntType a, IntType b) { return a % b ;}
+template<typename IntType>
+using BinaryFuncPtr = IntType(*)(IntType, IntType);
+template<typename IntType> BinaryFuncPtr<IntType> getSoftDiv() { return nullptr; }
+template<typename IntType> BinaryFuncPtr<IntType> getSoftMod() { return nullptr; }
+#if USE(JSVALUE32_64)
+template<> BinaryFuncPtr<int32_t> getSoftDiv<int32_t>() { return Math::i32_div_s; }
+template<> BinaryFuncPtr<uint32_t> getSoftDiv<uint32_t>() { return Math::i32_div_u; }
+template<> BinaryFuncPtr<int64_t> getSoftDiv<int64_t>() { return Math::i64_div_s; }
+template<> BinaryFuncPtr<uint64_t> getSoftDiv<uint64_t>() { return Math::i64_div_u; }
+template<> BinaryFuncPtr<int32_t> getSoftMod<int32_t>() { return Math::i32_rem_s; }
+template<> BinaryFuncPtr<uint32_t> getSoftMod<uint32_t>() { return Math::i32_rem_u; }
+template<> BinaryFuncPtr<int64_t> getSoftMod<int64_t>() { return Math::i64_rem_s; }
+template<> BinaryFuncPtr<uint64_t> getSoftMod<uint64_t>() { return Math::i64_rem_u; }
+#endif
 }
 
 template <typename IntType>
@@ -4423,9 +4460,9 @@ void AirIRGenerator::emitModOrDiv(bool isDiv, ExpressionType lhs, ExpressionType
     if (isARM()) {
         // TODO: use ARMv7 sdiv/udiv if available
         if (isDiv)
-            emitCCall(&softDiv<IntType>, result, lhs, rhs);
+            emitCCall(getSoftDiv<IntType>(), result, lhs, rhs);
         else
-            emitCCall(&softMod<IntType>, result, lhs, rhs);
+            emitCCall(getSoftMod<IntType>(), result, lhs, rhs);
         return;
     }
 
@@ -4686,6 +4723,8 @@ auto AirIRGenerator::addOp<OpType::I64Popcnt>(ExpressionType arg, ExpressionType
 template<>
 auto AirIRGenerator::addOp<F64ConvertUI64>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
+    result = f64();
+#if USE(JSVALUE64)
     auto* patchpoint = addPatchpoint(B3::Double);
     patchpoint->effects = B3::Effects::none();
     if (isX86())
@@ -4699,14 +4738,18 @@ auto AirIRGenerator::addOp<F64ConvertUI64>(ExpressionType arg, ExpressionType& r
         jit.convertUInt64ToDouble(params[1].gpr(), params[0].fpr());
 #endif
     });
-    result = f64();
     emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::f64_convert_u_i64, result, arg);
+#endif
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::F32ConvertUI64>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
+    result = f32();
+#if USE(JSVALUE64)
     auto* patchpoint = addPatchpoint(B3::Float);
     patchpoint->effects = B3::Effects::none();
     if (isX86())
@@ -4720,8 +4763,10 @@ auto AirIRGenerator::addOp<OpType::F32ConvertUI64>(ExpressionType arg, Expressio
         jit.convertUInt64ToFloat(params[1].gpr(), params[0].fpr());
 #endif
     });
-    result = f32();
     emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::f32_convert_u_i64, result, arg);
+#endif
     return { };
 }
 
@@ -4909,7 +4954,7 @@ auto AirIRGenerator::addOp<OpType::I32TruncUF32>(ExpressionType arg, ExpressionT
 
 template<>
 auto AirIRGenerator::addOp<OpType::I64TruncSF64>(ExpressionType arg, ExpressionType& result) -> PartialResult
-{ // TODO
+{
     auto max = addConstant(Types::F64, bitwise_cast<uint64_t>(-static_cast<double>(std::numeric_limits<int64_t>::min())));
     auto min = addConstant(Types::F64, bitwise_cast<uint64_t>(static_cast<double>(std::numeric_limits<int64_t>::min())));
 
@@ -4925,20 +4970,24 @@ auto AirIRGenerator::addOp<OpType::I64TruncSF64>(ExpressionType arg, ExpressionT
         this->emitThrowException(jit, ExceptionType::OutOfBoundsTrunc);
     });
 
+    result = g64();
+#if USE(JSVALUE64)
     auto* patchpoint = addPatchpoint(B3::Int64);
     patchpoint->effects = B3::Effects::none();
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+    patchpoint->setGenerator([=](CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
         jit.truncateDoubleToInt64(params[1].fpr(), params[0].gpr());
     });
 
-    result = g64();
     emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::i64_trunc_s_f64, result, arg);
+#endif
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType arg, ExpressionType& result) -> PartialResult
-{ // TODO
+{
     auto max = addConstant(Types::F64, bitwise_cast<uint64_t>(static_cast<double>(std::numeric_limits<int64_t>::min()) * -2.0));
     auto min = addConstant(Types::F64, bitwise_cast<uint64_t>(-1.0));
     
@@ -4954,6 +5003,8 @@ auto AirIRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType arg, ExpressionT
         this->emitThrowException(jit, ExceptionType::OutOfBoundsTrunc);
     });
 
+    result = g64();
+#if USE(JSVALUE64)
     TypedTmp signBitConstant;
     if (isX86())
         signBitConstant = addConstant(Types::F64, bitwise_cast<uint64_t>(static_cast<double>(std::numeric_limits<uint64_t>::max() - std::numeric_limits<int64_t>::max())));
@@ -4967,7 +5018,7 @@ auto AirIRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType arg, ExpressionT
         args.append(signBitConstant);
         patchpoint->numFPScratchRegisters = 1;
     }
-    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+    patchpoint->setGenerator([=](CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
         FPRReg scratch = InvalidFPRReg;
         FPRReg constant = InvalidFPRReg;
@@ -4978,14 +5029,16 @@ auto AirIRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType arg, ExpressionT
         jit.truncateDoubleToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
     });
 
-    result = g64();
     emitPatchpoint(m_currentBlock, patchpoint, Vector<TypedTmp, 8> { result }, WTFMove(args));
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::i64_trunc_u_f64, result, arg);
+#endif
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::I64TruncSF32>(ExpressionType arg, ExpressionType& result) -> PartialResult
-{ // TODO
+{
     auto max = addConstant(Types::F32, bitwise_cast<uint32_t>(-static_cast<float>(std::numeric_limits<int64_t>::min())));
     auto min = addConstant(Types::F32, bitwise_cast<uint32_t>(static_cast<float>(std::numeric_limits<int64_t>::min())));
 
@@ -5001,19 +5054,23 @@ auto AirIRGenerator::addOp<OpType::I64TruncSF32>(ExpressionType arg, ExpressionT
         this->emitThrowException(jit, ExceptionType::OutOfBoundsTrunc);
     });
 
+    result = g64();
+#if USE(JSVALUE64)
     auto* patchpoint = addPatchpoint(B3::Int64);
     patchpoint->effects = B3::Effects::none();
     patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
         jit.truncateFloatToInt64(params[1].fpr(), params[0].gpr());
     });
-    result = g64();
     emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::i64_trunc_s_f32, result, arg);
+#endif
     return { };
 }
 
 template<>
 auto AirIRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType arg, ExpressionType& result) -> PartialResult
-{ // TODO
+{
     auto max = addConstant(Types::F32, bitwise_cast<uint32_t>(static_cast<float>(std::numeric_limits<int64_t>::min()) * static_cast<float>(-2.0)));
     auto min = addConstant(Types::F32, bitwise_cast<uint32_t>(static_cast<float>(-1.0)));
     
@@ -5029,6 +5086,8 @@ auto AirIRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType arg, ExpressionT
         this->emitThrowException(jit, ExceptionType::OutOfBoundsTrunc);
     });
 
+    result = g64();
+#if USE(JSVALUE64)
     TypedTmp signBitConstant;
     if (isX86())
         signBitConstant = addConstant(Types::F32, bitwise_cast<uint32_t>(static_cast<float>(std::numeric_limits<uint64_t>::max() - std::numeric_limits<int64_t>::max())));
@@ -5053,9 +5112,10 @@ auto AirIRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType arg, ExpressionT
         jit.truncateFloatToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
     });
 
-    result = g64();
     emitPatchpoint(m_currentBlock, patchpoint, Vector<TypedTmp, 8> { result }, WTFMove(args));
-
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::i64_trunc_u_f32, result, arg);
+#endif
     return { };
 }
 
@@ -5766,7 +5826,11 @@ template<> auto AirIRGenerator::addOp<OpType::F64Copysign>(ExpressionType arg0, 
 template<> auto AirIRGenerator::addOp<OpType::F32ConvertSI64>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f32();
+#if USE(JSVALUE64)
     append(ConvertInt64ToFloat, arg0, result);
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::f32_convert_s_i64, result, arg0);
+#endif
     return { };
 }
 
@@ -5936,7 +6000,11 @@ template<> auto AirIRGenerator::addOp<OpType::I64LtS>(ExpressionType arg0, Expre
 template<> auto AirIRGenerator::addOp<OpType::F64ConvertSI64>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f64();
+#if USE(JSVALUE64)
     append(ConvertInt64ToDouble, arg0, result);
+#elif USE(JSVALUE32_64)
+    emitCCall(Math::f64_convert_s_i64, result, arg0);
+#endif
     return { };
 }
 
