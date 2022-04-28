@@ -4774,16 +4774,16 @@ template<>
 auto AirIRGenerator::addOp<OpType::F64Nearest>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
     result = f64();
-    if (MacroAssembler::supportsFloatingPointRounding()) {
-        auto *patchpoint = addPatchpoint(B3::Double);
-        patchpoint->effects = B3::Effects::none();
-        patchpoint->setGenerator([=](CCallHelpers &jit, const B3::StackmapGenerationParams &params) {
-            jit.roundTowardNearestIntDouble(params[1].fpr(), params[0].fpr());
-        });
-        emitPatchpoint(patchpoint, result, arg);
-        return { };
-    }
-    emitCCall(&Math::roundDouble, result, arg);
+#if USE(JSVALUE64)
+    auto *patchpoint = addPatchpoint(B3::Double);
+    patchpoint->effects = B3::Effects::none();
+    patchpoint->setGenerator([=](CCallHelpers &jit, const B3::StackmapGenerationParams &params) {
+        jit.roundTowardNearestIntDouble(params[1].fpr(), params[0].fpr());
+    });
+    emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    emitCCall(&Math::f64_nearest, result, arg);
+#endif
     return { };
 }
 
@@ -4791,16 +4791,16 @@ template<>
 auto AirIRGenerator::addOp<OpType::F32Nearest>(ExpressionType arg, ExpressionType& result) -> PartialResult
 {
     result = f32();
-    if (MacroAssembler::supportsFloatingPointRounding()) {
-        auto* patchpoint = addPatchpoint(B3::Float);
-        patchpoint->effects = B3::Effects::none();
-        patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
-            jit.roundTowardNearestIntFloat(params[1].fpr(), params[0].fpr());
-        });
-        emitPatchpoint(patchpoint, result, arg);
-        return { };
-    }
-    emitCCall(&Math::roundFloat, result, arg);
+#if USE(JSVALUE64)
+    auto* patchpoint = addPatchpoint(B3::Float);
+    patchpoint->effects = B3::Effects::none();
+    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+        jit.roundTowardNearestIntFloat(params[1].fpr(), params[0].fpr());
+    });
+    emitPatchpoint(patchpoint, result, arg);
+#elif USE(JSVALUE32_64)
+    emitCCall(&Math::f32_nearest, result, arg);
+#endif
     return { };
 }
 
