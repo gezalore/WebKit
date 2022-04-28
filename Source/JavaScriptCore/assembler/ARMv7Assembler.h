@@ -562,6 +562,10 @@ private:
         OP_ADD_SP_imm_T1    = 0xA800,
         OP_ADD_SP_imm_T2    = 0xB000,
         OP_SUB_SP_imm_T1    = 0xB080,
+        OP_SXTH_T1          = 0xB200,
+        OP_SXTB_T1          = 0xB240,
+        OP_UXTH_T1          = 0xB280,
+        OP_UXTB_T1          = 0xB2C0,
         OP_PUSH_T1          = 0xB400,
         OP_POP_T1           = 0xBC00,
         OP_BKPT             = 0xBE00,
@@ -670,6 +674,10 @@ private:
         OP_LDRSB_imm_T1 = 0xF990,
         OP_LDRSH_imm_T1 = 0xF9B0,
         OP_LSL_reg_T2   = 0xFA00,
+        OP_SXTH_T2      = 0xFA0F,
+        OP_UXTH_T2      = 0xFA1F,
+        OP_SXTB_T2      = 0xFA4F,
+        OP_UXTB_T2      = 0xFA5F,
         OP_LSR_reg_T2   = 0xFA20,
         OP_ASR_reg_T2   = 0xFA40,
         OP_ROR_reg_T2   = 0xFA60,
@@ -2018,6 +2026,22 @@ public:
             sub_S(rd, rn, rm, ShiftTypeAndAmount());
     }
 
+    ALWAYS_INLINE void sxtb(RegisterID rd, RegisterID rm)
+    {
+        if (!((rd | rm) & 8))
+            m_formatter.oneWordOp10Reg3Reg3(OP_SXTB_T1, rm, rd);
+        else
+            m_formatter.twoWordOp16FourFours(OP_SXTB_T2, FourFours(0xf, rd, 0x8, rm));
+    }
+
+    ALWAYS_INLINE void sxth(RegisterID rd, RegisterID rm)
+    {
+        if (!((rd | rm) & 8))
+            m_formatter.oneWordOp10Reg3Reg3(OP_SXTH_T1, rm, rd);
+        else
+            m_formatter.twoWordOp16FourFours(OP_SXTH_T2, FourFours(0xf, rd, 0x8, rm));
+    }
+
     ALWAYS_INLINE void tst(RegisterID rn, ARMThumbImmediate imm)
     {
         ASSERT(!BadReg(rn));
@@ -2058,6 +2082,22 @@ public:
         m_formatter.twoWordOp12Reg4FourFours(OP_UDIV_T1, rn, FourFours(0xf, rd, 0xf, rm));
     }
 #endif
+
+    ALWAYS_INLINE void uxtb(RegisterID rd, RegisterID rm)
+    {
+        if (!((rd | rm) & 8))
+            m_formatter.oneWordOp10Reg3Reg3(OP_UXTB_T1, rm, rd);
+        else
+            m_formatter.twoWordOp16FourFours(OP_UXTB_T2, FourFours(0xf, rd, 0x8, rm));
+    }
+
+    ALWAYS_INLINE void uxth(RegisterID rd, RegisterID rm)
+    {
+        if (!((rd | rm) & 8))
+            m_formatter.oneWordOp10Reg3Reg3(OP_UXTH_T1, rm, rd);
+        else
+            m_formatter.twoWordOp16FourFours(OP_UXTH_T2, FourFours(0xf, rd, 0x8, rm));
+    }
 
     void vldmia(RegisterID rn, FPDoubleRegisterID rs, uint32_t count)
     {

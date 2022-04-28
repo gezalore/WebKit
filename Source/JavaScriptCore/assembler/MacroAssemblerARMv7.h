@@ -1932,6 +1932,26 @@ public:
         moveDouble(fpTempRegister, fr2);
     }
 
+    void zeroExtend8To32(RegisterID src, RegisterID dest)
+    {
+        m_assembler.uxtb(dest, src);
+    }
+
+    void zeroExtend16To32(RegisterID src, RegisterID dest)
+    {
+        m_assembler.uxth(dest, src);
+    }
+
+    void signExtend8To32(RegisterID src, RegisterID dest)
+    {
+        m_assembler.sxtb(dest, src);
+    }
+
+    void signExtend16To32(RegisterID src, RegisterID dest)
+    {
+        m_assembler.sxth(dest, src);
+    }
+
     void signExtend32ToPtr(RegisterID src, RegisterID dest)
     {
         move(src, dest);
@@ -2946,10 +2966,6 @@ private:
     // TODO: MISSING IMPLEMENTATION PLACEHOLDERS BELOW. PUT THESE IN THE PLACE THEY BELONG ONCE IMPLEMENTED.
 public:
     Jump branchAdd64(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void zeroExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void zeroExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void signExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void signExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveConditionally32(RelationalCondition, RegisterID, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveConditionally32(RelationalCondition, RegisterID, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void moveConditionally32(RelationalCondition, RegisterID, TrustedImm32, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
