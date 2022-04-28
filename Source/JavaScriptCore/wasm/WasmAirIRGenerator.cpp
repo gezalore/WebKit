@@ -5587,11 +5587,22 @@ template<> auto AirIRGenerator::addOp<OpType::F32Copysign>(ExpressionType arg0, 
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F64ConvertUI32>(ExpressionType arg0, ExpressionType& result) -> PartialResult
-{ // TODO
+{
     result = f64();
+#if USE(JSVALUE64)
     auto temp = g64();
     append(Move32, arg0, temp);
     append(ConvertInt64ToDouble, temp, result);
+#elif USE(JSVALUE32_64)
+    auto* patchpoint = addPatchpoint(B3::Double);
+    patchpoint->effects = B3::Effects::none();
+    patchpoint->clobber(RegisterSet::macroScratchRegisters());
+    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+        AllowMacroScratchRegisterUsage allowScratch(jit);
+        jit.convertUInt32ToDouble(params[1].gpr(), params[0].fpr());
+    });
+    emitPatchpoint(patchpoint, result, arg0);
+#endif
     return { };
 }
 
@@ -5888,11 +5899,22 @@ template<> auto AirIRGenerator::addOp<OpType::I32ShrU>(ExpressionType arg0, Expr
 }
 
 template<> auto AirIRGenerator::addOp<OpType::F32ConvertUI32>(ExpressionType arg0, ExpressionType& result) -> PartialResult
-{ // TODO
+{
     result = f32();
+#if USE(JSVALUE64)
     auto temp = g64();
     append(Move32, arg0, temp);
     append(ConvertInt64ToFloat, temp, result);
+#elif USE(JSVALUE32_64)
+    auto* patchpoint = addPatchpoint(B3::Float);
+    patchpoint->effects = B3::Effects::none();
+    patchpoint->clobber(RegisterSet::macroScratchRegisters());
+    patchpoint->setGenerator([=] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+        AllowMacroScratchRegisterUsage allowScratch(jit);
+        jit.convertUInt32ToFloat(params[1].gpr(), params[0].fpr());
+    });
+    emitPatchpoint(patchpoint, result, arg0);
+#endif
     return { };
 }
 
