@@ -2112,6 +2112,12 @@ public:
         m_formatter.vfpOp(OP_VCVT_FPIVFP, OP_VCVT_FPIVFPb, toDouble, vcvtOp(false, false, false), rd, rm);
     }
 
+    void vcvt_unsignedToFloatingPoint(FPDoubleRegisterID rd, FPSingleRegisterID rm, bool toDouble = true)
+    {
+        // boolean values are 64bit (toInt, unsigned, roundZero)
+        m_formatter.vfpOp(OP_VCVT_FPIVFP, OP_VCVT_FPIVFPb, toDouble, vcvtOp(false, true, false), rd, rm);
+    }
+
     void vcvt_floatingPointToSigned(FPSingleRegisterID rd, FPDoubleRegisterID rm)
     {
         // boolean values are 64bit (toInt, unsigned, roundZero)
