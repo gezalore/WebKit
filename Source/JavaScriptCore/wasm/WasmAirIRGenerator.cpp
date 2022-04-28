@@ -1974,6 +1974,16 @@ inline AirIRGenerator::ExpressionType AirIRGenerator::emitCheckAndPreparePointer
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
+
+#if USE(JSVALUE32_64)
+        append(Move, Arg::bigImm(offset), temp);
+        append(AddPtr, result, temp);
+        emitCheck([&] {
+            return Inst(Branch32, nullptr, Arg::relCond(MacroAssembler::Below), temp, result);
+        }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
+            this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
+        });
+#endif
         break;
     }
 
@@ -2171,13 +2181,28 @@ inline TypedTmp AirIRGenerator::emitLoadOp(LoadOpType op, ExpressionType pointer
 
     case LoadOpType::F32Load: {
         result = f32();
+#if !CPU(ARM_THUMB2)
         appendEffectful(MoveFloat, addrArg, result);
+#else
+        // Might be unaligned so can't use MoveFloat
+        auto tmp = g32();
+        appendEffectful(Move, addrArg, tmp);
+        append(Move32ToFloat, tmp, result);
+#endif
         break;
     }
 
     case LoadOpType::F64Load: {
         result = f64();
+#if !CPU(ARM_THUMB2)
         appendEffectful(MoveDouble, addrArg, result);
+#else
+        // Might be unaligned so can't use MoveDouble
+        auto tmp = g64();
+        appendEffectful(Move, addrArg, tmp.lo());
+        appendEffectful(Move, getAddr(offset + 4), tmp.hi());
+        append(Move64ToDouble, tmp.hi(), tmp.lo(), result);
+#endif
         break;
     }
     }
@@ -2309,13 +2334,29 @@ inline void AirIRGenerator::emitStoreOp(StoreOpType op, ExpressionType pointer, 
 #endif
         return;
 
-    case StoreOpType::F32Store:
+    case StoreOpType::F32Store: {
+#if !CPU(ARM_THUMB2)
         append(MoveFloat, value, addrArg);
+#else
+        // Might be unaligned so can't use MoveFloat
+        auto tmp = g32();
+        append(MoveFloatTo32, value, tmp);
+        append(Move, tmp, addrArg);
+#endif
         return;
-
-    case StoreOpType::F64Store:
+    }
+    case StoreOpType::F64Store: {
+#if !CPU(ARM_THUMB2)
         append(MoveDouble, value, addrArg);
+#else
+        // Might be unaligned so can't use MoveDouble
+        auto tmp = g64();
+        append(MoveDoubleTo64, value, tmp.hi(), tmp.lo());
+        appendEffectful(Move, tmp.lo(), addrArg);
+        appendEffectful(Move, tmp.hi(), getAddr(offset + 4));
+#endif
         return;
+    }
     }
 
     RELEASE_ASSERT_NOT_REACHED();
