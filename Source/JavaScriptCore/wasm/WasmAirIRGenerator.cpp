@@ -401,6 +401,7 @@ public:
     PartialResult WARN_UNUSED_RETURN addLocal(Type, uint32_t);
     ExpressionType addConstant(Type, uint64_t);
     ExpressionType addConstant(BasicBlock*, Type, uint64_t);
+    void materializeConstant(BasicBlock*, uint64_t, ExpressionType result);
     ExpressionType addBottom(BasicBlock*, Type);
 
     // References
@@ -1400,7 +1401,13 @@ auto AirIRGenerator::addConstant(Type type, uint64_t value) -> ExpressionType
 auto AirIRGenerator::addConstant(BasicBlock* block, Type type, uint64_t value) -> ExpressionType
 {
     auto result = tmpForType(type);
-    switch (type.kind) {
+    materializeConstant(block, value, result);
+    return result;
+}
+
+void AirIRGenerator::materializeConstant(BasicBlock*block, uint64_t value, ExpressionType result)
+{
+    switch (result.type().kind) {
     case TypeKind::I32:
         append(block, Move, Arg::bigImm(value), result);
         break;
@@ -1434,12 +1441,9 @@ auto AirIRGenerator::addConstant(BasicBlock* block, Type type, uint64_t value) -
 #endif
         break;
     }
-
     default:
         RELEASE_ASSERT_NOT_REACHED();
     }
-
-    return result;
 }
 
 auto AirIRGenerator::addBottom(BasicBlock* block, Type type) -> ExpressionType
@@ -3143,7 +3147,7 @@ auto AirIRGenerator::truncSaturated(Ext1OpType op, ExpressionType arg, Expressio
     maxCheckCase->setSuccessors(maxCase, inBoundsCase);
 
     if (!minResult) {
-        append(minCase, Move, Arg::bigImm(minResult), result);
+        materializeConstant(minCase, minResult, result);
         append(minCase, Jump);
         minCase->setSuccessors(continuation);
     } else {
@@ -3152,16 +3156,16 @@ auto AirIRGenerator::truncSaturated(Ext1OpType op, ExpressionType arg, Expressio
         append(minCase, branchOp, Arg::doubleCond(MacroAssembler::DoubleEqualAndOrdered), arg, arg);
         minCase->setSuccessors(minMaterializeCase, nanCase);
 
-        append(minMaterializeCase, Move, Arg::bigImm(minResult), result);
+        materializeConstant(minMaterializeCase, minResult, result);
         append(minMaterializeCase, Jump);
         minMaterializeCase->setSuccessors(continuation);
 
-        append(nanCase, Move, Arg::bigImm(0), result);
+        materializeConstant(nanCase, 0, result);
         append(nanCase, Jump);
         nanCase->setSuccessors(continuation);
     }
 
-    append(maxCase, Move, Arg::bigImm(maxResult), result);
+    materializeConstant(maxCase, maxResult, result);
     append(maxCase, Jump);
     maxCase->setSuccessors(continuation);
 
@@ -6117,7 +6121,11 @@ template<> auto AirIRGenerator::addOp<OpType::I32Ne>(ExpressionType arg0, Expres
 template<> auto AirIRGenerator::addOp<OpType::F64ReinterpretI64>(ExpressionType arg0, ExpressionType& result) -> PartialResult
 {
     result = f64();
+#if USE(JSVALUE64)
     append(Move64ToDouble, arg0, result);
+#elif USE(JSVALUE32_64)
+    append(Move64ToDouble, arg0.hi(), arg0.lo(), result);
+#endif
     return { };
 }
 
