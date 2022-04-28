@@ -623,6 +623,18 @@ JSC_DEFINE_JIT_OPERATION(roundFloat, float, (float value))
 }
 
 #if USE(JSVALUE32_64)
+JSC_DEFINE_JIT_OPERATION(f32_nearest, float, (float operand))
+{
+    static_assert(std::numeric_limits<float>::round_style == std::round_to_nearest);
+    return std::nearbyint(operand);
+}
+
+JSC_DEFINE_JIT_OPERATION(f64_nearest, double, (double operand))
+{
+    static_assert(std::numeric_limits<float>::round_style == std::round_to_nearest);
+    return std::nearbyint(operand);
+}
+
 JSC_DEFINE_JIT_OPERATION(i32_div_s, int32_t, (int32_t a, int32_t b)) { return a / b; }
 JSC_DEFINE_JIT_OPERATION(i32_div_u, uint32_t, (uint32_t a, uint32_t b)) { return a / b; }
 JSC_DEFINE_JIT_OPERATION(i32_rem_s, int32_t, (int32_t a, int32_t b)) { return a % b; }
