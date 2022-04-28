@@ -418,16 +418,10 @@ void GenerateAndAllocateRegisters::prepareForGeneration()
 
     {
         unsigned nextIndex = 0;
-
-        unsigned adjustmentForAlignment = 0;
-        if (constexpr unsigned excess = sizeof(CallerFrameAndPC) % stackAlignmentBytes())
-            adjustmentForAlignment = stackAlignmentBytes() - excess;
-        intptr_t stackBase = -static_cast<intptr_t>(m_code.frameSize()) - adjustmentForAlignment;
-
         for (StackSlot* slot : m_code.stackSlots()) {
             if (slot->isLocked())
                 continue;
-            intptr_t offset = stackBase - static_cast<intptr_t>(nextIndex) * 8 - 8;
+            intptr_t offset = -static_cast<intptr_t>(m_code.frameSize()) - static_cast<intptr_t>(nextIndex) * 8 - 8;
             ++nextIndex;
             slot->setOffsetFromFP(offset);
         }
