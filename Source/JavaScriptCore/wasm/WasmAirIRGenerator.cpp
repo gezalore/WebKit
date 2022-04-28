@@ -6276,7 +6276,7 @@ template<> auto AirIRGenerator::addOp<OpType::I64Extend8S>(ExpressionType arg0, 
     append(SignExtend32ToPtr, temp, result);
 #elif USE(JSVALUE32_64)
     append(SignExtend8To32, arg0.lo(), result.lo());
-    append(Rshift32, arg0.lo(), Arg::imm(31), result.hi());
+    append(Rshift32, result.lo(), Arg::imm(31), result.hi());
 #endif
     return { };
 }
@@ -6291,7 +6291,7 @@ template<> auto AirIRGenerator::addOp<OpType::I64Extend16S>(ExpressionType arg0,
     append(SignExtend32ToPtr, temp, result);
 #elif USE(JSVALUE32_64)
     append(SignExtend16To32, arg0.lo(), result.lo());
-    append(Rshift32, arg0.lo(), Arg::imm(31), result.hi());
+    append(Rshift32, result.lo(), Arg::imm(31), result.hi());
 #endif
     return { };
 }
