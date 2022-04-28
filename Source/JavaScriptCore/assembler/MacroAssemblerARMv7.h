@@ -1747,7 +1747,7 @@ public:
 
     void truncateFloatToUint32(FPRegisterID src, RegisterID dest)
     {
-        m_assembler.vcvt_floatingPointToSigned(fpTempRegisterAsSingle(), asSingle(src));
+        m_assembler.vcvt_floatingPointToUnsigned(fpTempRegisterAsSingle(), asSingle(src));
         m_assembler.vmov(dest, fpTempRegisterAsSingle());
     }
     
