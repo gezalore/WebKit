@@ -47,10 +47,7 @@ static void defaultPrologueGenerator(CCallHelpers& jit, Code& code)
     jit.emitFunctionPrologue();
     if (code.frameSize()) {
         AllowMacroScratchRegisterUsageIf allowScratch(jit, isARM64() || isARM());
-        unsigned adjustmentForAlignment = 0;
-        if (constexpr unsigned excess = sizeof(CallerFrameAndPC) % stackAlignmentBytes())
-            adjustmentForAlignment = stackAlignmentBytes() - excess;
-        jit.subPtr(MacroAssembler::TrustedImm32(code.frameSize() + adjustmentForAlignment), MacroAssembler::stackPointerRegister);
+        jit.subPtr(MacroAssembler::TrustedImm32(code.frameSize()), MacroAssembler::stackPointerRegister);
     }
     
     jit.emitSave(code.calleeSaveRegisterAtOffsetList());
@@ -178,9 +175,9 @@ StackSlot* Code::addStackSlot(uint64_t byteSize, StackSlotKind kind)
     StackSlot* result = m_stackSlots.addNew(byteSize, kind);
     if (m_stackIsAllocated) {
         // FIXME: This is unnecessarily awful. Fortunately, it doesn't run often.
-        unsigned extent = WTF::roundUpToMultipleOf(result->alignment(), frameSize() + byteSize);
+        unsigned extent = WTF::roundUpToMultipleOf(result->alignment(), frameSize() - stackAdjustmentForAlignment() + byteSize);
         result->setOffsetFromFP(-static_cast<ptrdiff_t>(extent));
-        setFrameSize(WTF::roundUpToMultipleOf(stackAlignmentBytes(), extent));
+        setFrameSize(WTF::roundUpToMultipleOf(stackAlignmentBytes(), extent) + stackAdjustmentForAlignment());
     }
     return result;
 }
