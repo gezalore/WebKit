@@ -127,10 +127,7 @@ void lowerStackArgs(Code& code)
                         result = Arg::addr(Air::Tmp(MacroAssembler::stackPointerRegister), offsetFromSP);
                         if (result.isValidForm(width))
                             return result;
-#if CPU(ARM64) || CPU(RISCV64) || CPU(ARM)
-#if CPU(ARM)
-                        UNREACHABLE_FOR_PLATFORM();
-#endif
+#if CPU(ARM64) || CPU(RISCV64)
                         ASSERT(pinnedExtendedOffsetAddrRegister());
                         Air::Tmp tmp = Air::Tmp(*pinnedExtendedOffsetAddrRegister());
 
@@ -138,6 +135,9 @@ void lowerStackArgs(Code& code)
                         insertionSet.insert(instIndex, Move, inst.origin, largeOffset, tmp);
                         insertionSet.insert(instIndex, Add64, inst.origin, Air::Tmp(MacroAssembler::stackPointerRegister), tmp);
                         result = Arg::addr(tmp, 0);
+                        return result;
+#elif CPU(ARM)
+                        // We solve this from the macro assembler for now
                         return result;
 #elif CPU(X86_64)
                         UNUSED_PARAM(instIndex);

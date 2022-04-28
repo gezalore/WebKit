@@ -1270,10 +1270,11 @@ public:
     {
         if (isX86())
             return true;
-        if (isARM64()) {
-            if (!width)
-                return true;
 
+        if (!width)
+            return true;
+
+        if (isARM64()) {
             if (isValidSignedImm9(offset))
                 return true;
 
