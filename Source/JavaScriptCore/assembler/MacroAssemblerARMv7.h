@@ -1726,6 +1726,18 @@ public:
         m_assembler.vcvt_floatingPointToUnsigned(fpTempRegisterAsSingle(), src);
         m_assembler.vmov(dest, fpTempRegisterAsSingle());
     }
+
+    void truncateFloatToInt32(FPRegisterID src, RegisterID dest)
+    {
+        m_assembler.vcvt_floatingPointToSigned(fpTempRegisterAsSingle(), asSingle(src));
+        m_assembler.vmov(dest, fpTempRegisterAsSingle());
+    }
+
+    void truncateFloatToUint32(FPRegisterID src, RegisterID dest)
+    {
+        m_assembler.vcvt_floatingPointToSigned(fpTempRegisterAsSingle(), asSingle(src));
+        m_assembler.vmov(dest, fpTempRegisterAsSingle());
+    }
     
     // Convert 'src' to an integer, and places the resulting 'dest'.
     // If the result is not representable as a 32 bit value, branch.
@@ -2922,7 +2934,6 @@ private:
     // TODO: MISSING IMPLEMENTATION PLACEHOLDERS BELOW. PUT THESE IN THE PLACE THEY BELONG ONCE IMPLEMENTED.
 public:
     Jump branchAdd64(ResultCondition, RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void mul64(RegisterID, RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void zeroExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void zeroExtend16To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void signExtend8To32(RegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
@@ -2951,17 +2962,6 @@ public:
     void moveDoubleConditionallyFloat(RelationalCondition, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
     void loadFence() { UNREACHABLE_FOR_PLATFORM(); }
     void test32(ResultCondition, RegisterID, TrustedImm32, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateFloatToInt32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateFloatToUint32(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateFloatToInt64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateFloatToUint64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateFloatToUint64(FPRegisterID, RegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateDoubleToInt64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateDoubleToUint64(FPRegisterID, RegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void truncateDoubleToUint64(FPRegisterID, RegisterID, FPRegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void convertUInt64ToDouble(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-    void convertUInt64ToFloat(RegisterID, FPRegisterID) { UNREACHABLE_FOR_PLATFORM(); }
-
 };
 
 } // namespace JSC

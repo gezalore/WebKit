@@ -2124,6 +2124,18 @@ public:
         m_formatter.vfpOp(OP_VCVT_FPIVFP, OP_VCVT_FPIVFPb, true, vcvtOp(true, true, true), rd, rm);
     }
 
+    void vcvt_floatingPointToSigned(FPSingleRegisterID rd, FPSingleRegisterID rm)
+    {
+        // boolean values are 64bit (toInt, unsigned, roundZero)
+        m_formatter.vfpOp(OP_VCVT_FPIVFP, OP_VCVT_FPIVFPb, false, vcvtOp(true, false, true), rd, rm);
+    }
+
+    void vcvt_floatingPointToUnsigned(FPSingleRegisterID rd, FPSingleRegisterID rm)
+    {
+        // boolean values are 64bit (toInt, unsigned, roundZero)
+        m_formatter.vfpOp(OP_VCVT_FPIVFP, OP_VCVT_FPIVFPb, false, vcvtOp(true, true, true), rd, rm);
+    }
+
     void vdiv(FPSingleRegisterID rd, FPSingleRegisterID rn, FPSingleRegisterID rm)
     {
         m_formatter.vfpOp(OP_VDIV, OP_VDIVb, false, rn, rd, rm);

@@ -2194,6 +2194,7 @@ auto B3IRGenerator::truncSaturated(Ext1OpType op, ExpressionType argVar, Express
         case Ext1OpType::I32TruncSatF64U:
             jit.truncateDoubleToUint32(params[1].fpr(), params[0].gpr());
             break;
+#if USE(JSVALUE64)
         case Ext1OpType::I64TruncSatF32S:
             jit.truncateFloatToInt64(params[1].fpr(), params[0].gpr());
             break;
@@ -2224,6 +2225,7 @@ auto B3IRGenerator::truncSaturated(Ext1OpType op, ExpressionType argVar, Express
             jit.truncateDoubleToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
             break;
         }
+#endif
         default:
             RELEASE_ASSERT_NOT_REACHED();
             break;
@@ -3504,10 +3506,11 @@ auto B3IRGenerator::addOp<F64ConvertUI64>(ExpressionType argVar, ExpressionType&
 {
     Value* arg = get(argVar);
     PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Double, origin());
+    patchpoint->append(ConstrainedValue(arg, ValueRep::SomeRegister));
+#if USE(JSVALUE64)
     if (isX86())
         patchpoint->numGPScratchRegisters = 1;
     patchpoint->clobber(RegisterSet::macroScratchRegisters());
-    patchpoint->append(ConstrainedValue(arg, ValueRep::SomeRegister));
     patchpoint->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
 #if CPU(X86_64)
@@ -3516,6 +3519,9 @@ auto B3IRGenerator::addOp<F64ConvertUI64>(ExpressionType argVar, ExpressionType&
         jit.convertUInt64ToDouble(params[1].gpr(), params[0].fpr());
 #endif
     });
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM(); // Needs porting
+#endif
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
     return { };
@@ -3526,10 +3532,11 @@ auto B3IRGenerator::addOp<OpType::F32ConvertUI64>(ExpressionType argVar, Express
 {
     Value* arg = get(argVar);
     PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Float, origin());
+    patchpoint->append(ConstrainedValue(arg, ValueRep::SomeRegister));
+#if USE(JSVALUE64)
     if (isX86())
         patchpoint->numGPScratchRegisters = 1;
     patchpoint->clobber(RegisterSet::macroScratchRegisters());
-    patchpoint->append(ConstrainedValue(arg, ValueRep::SomeRegister));
     patchpoint->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
 #if CPU(X86_64)
@@ -3538,6 +3545,9 @@ auto B3IRGenerator::addOp<OpType::F32ConvertUI64>(ExpressionType argVar, Express
         jit.convertUInt64ToFloat(params[1].gpr(), params[0].fpr());
 #endif
     });
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM(); // Needs porting
+#endif
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
     return { };
@@ -3711,10 +3721,14 @@ auto B3IRGenerator::addOp<OpType::I64TruncSF64>(ExpressionType argVar, Expressio
         this->emitExceptionCheck(jit, ExceptionType::OutOfBoundsTrunc);
     });
     PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
+#if USE(JSVALUE64)
     patchpoint->append(arg, ValueRep::SomeRegister);
     patchpoint->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
         jit.truncateDoubleToInt64(params[1].fpr(), params[0].gpr());
     });
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM(); // Needs porting
+#endif
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
     return { };
@@ -3735,6 +3749,8 @@ auto B3IRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType argVar, Expressio
         this->emitExceptionCheck(jit, ExceptionType::OutOfBoundsTrunc);
     });
 
+    PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
+#if USE(JSVALUE64)
     Value* signBitConstant;
     if (isX86()) {
         // Since x86 doesn't have an instruction to convert floating points to unsigned integers, we at least try to do the smart thing if
@@ -3742,7 +3758,6 @@ auto B3IRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType argVar, Expressio
         // so we can pool them if needed.
         signBitConstant = constant(Double, bitwise_cast<uint64_t>(static_cast<double>(std::numeric_limits<uint64_t>::max() - std::numeric_limits<int64_t>::max())));
     }
-    PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
     patchpoint->append(arg, ValueRep::SomeRegister);
     if (isX86()) {
         patchpoint->append(signBitConstant, ValueRep::SomeRegister);
@@ -3759,6 +3774,9 @@ auto B3IRGenerator::addOp<OpType::I64TruncUF64>(ExpressionType argVar, Expressio
         }
         jit.truncateDoubleToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
     });
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM(); // Needs porting
+#endif
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
     return { };
@@ -3779,10 +3797,14 @@ auto B3IRGenerator::addOp<OpType::I64TruncSF32>(ExpressionType argVar, Expressio
         this->emitExceptionCheck(jit, ExceptionType::OutOfBoundsTrunc);
     });
     PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
+#if USE(JSVALUE64)
     patchpoint->append(arg, ValueRep::SomeRegister);
     patchpoint->setGenerator([=] (CCallHelpers& jit, const StackmapGenerationParams& params) {
         jit.truncateFloatToInt64(params[1].fpr(), params[0].gpr());
     });
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM(); // Needs porting
+#endif
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
     return { };
@@ -3803,6 +3825,8 @@ auto B3IRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType argVar, Expressio
         this->emitExceptionCheck(jit, ExceptionType::OutOfBoundsTrunc);
     });
 
+    PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
+#if USE(JSVALUE64)
     Value* signBitConstant;
     if (isX86()) {
         // Since x86 doesn't have an instruction to convert floating points to unsigned integers, we at least try to do the smart thing if
@@ -3810,7 +3834,6 @@ auto B3IRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType argVar, Expressio
         // so we can pool them if needed.
         signBitConstant = constant(Float, bitwise_cast<uint32_t>(static_cast<float>(std::numeric_limits<uint64_t>::max() - std::numeric_limits<int64_t>::max())));
     }
-    PatchpointValue* patchpoint = m_currentBlock->appendNew<PatchpointValue>(m_proc, Int64, origin());
     patchpoint->append(arg, ValueRep::SomeRegister);
     if (isX86()) {
         patchpoint->append(signBitConstant, ValueRep::SomeRegister);
@@ -3827,6 +3850,9 @@ auto B3IRGenerator::addOp<OpType::I64TruncUF32>(ExpressionType argVar, Expressio
         }
         jit.truncateFloatToUint64(params[1].fpr(), params[0].gpr(), scratch, constant);
     });
+#elif USE(JSVALUE32_64)
+    UNREACHABLE_FOR_PLATFORM(); // Needs porting
+#endif
     patchpoint->effects = Effects::none();
     result = push(patchpoint);
     return { };
