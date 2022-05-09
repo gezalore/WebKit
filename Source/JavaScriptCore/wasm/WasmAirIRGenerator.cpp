@@ -68,6 +68,7 @@ using namespace B3::Air;
 
 static constexpr B3::Air::Opcode AddPtr = is64Bit() ? Add64 : Add32;
 static constexpr B3::Air::Opcode MulPtr = is64Bit() ? Mul64 : Mul32;
+static constexpr B3::Air::Opcode LeaPtr = is64Bit() ? Lea64 : Lea32;
 static constexpr B3::Air::Opcode BranchPtr = is64Bit() ? Branch64 : Branch32;
 static constexpr B3::Air::Opcode BranchTestPtr = is64Bit() ? BranchTest64 : BranchTest32;
 
@@ -895,6 +896,7 @@ private:
 
     void emitMove(const TypedTmp& src, const TypedTmp& dst)
     {
+        if (src == dst) return;
         ASSERT(isSubtype(src.type(), dst.type()));
 #if USE(JSVALUE32_64)
         if (src.isGPPair()) {
@@ -920,8 +922,8 @@ private:
     ExpressionType emitAtomicBinaryRMWOp(ExtAtomicOpType, Type, ExpressionType pointer, ExpressionType value, uint32_t offset);
     ExpressionType emitAtomicCompareExchange(ExtAtomicOpType, Type, ExpressionType pointer, ExpressionType expected, ExpressionType value, uint32_t offset);
 
-    void sanitizeAtomicResult(ExtAtomicOpType, Type, Tmp source, Tmp dest);
-    void sanitizeAtomicResult(ExtAtomicOpType, Type, Tmp result);
+    void sanitizeAtomicResult(ExtAtomicOpType, TypedTmp source, TypedTmp dest);
+    void sanitizeAtomicResult(ExtAtomicOpType, TypedTmp result);
     TypedTmp appendGeneralAtomic(ExtAtomicOpType, B3::Air::Opcode nonAtomicOpcode, B3::Commutativity, Arg input, Arg addrArg, TypedTmp result);
     TypedTmp appendStrongCAS(ExtAtomicOpType, TypedTmp expected, TypedTmp value, Arg addrArg, TypedTmp result);
 
@@ -2413,34 +2415,48 @@ auto AirIRGenerator::fixupPointerPlusOffsetForAtomicOps(ExtAtomicOpType op, Expr
     if (Arg::isValidAddrForm(offset, B3::widthForBytes(sizeOfAtomicOpMemoryAccess(op)))) {
         if (offset == 0)
             return pointer;
-        TypedTmp newPtr = g64();
-        append(Lea64, Arg::addr(pointer, offset), newPtr);
+        TypedTmp newPtr = gPtr();
+        append(LeaPtr, Arg::addr(pointer, offset), newPtr);
         return newPtr;
     }
-    TypedTmp newPtr = g64();
+    TypedTmp newPtr = gPtr();
     append(Move, Arg::bigImm(offset), newPtr);
-    append(Add64, pointer, newPtr);
+    append(AddPtr, pointer, newPtr);
     return newPtr;
 }
 
-void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, Type valueType, Tmp source, Tmp dest)
+void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, TypedTmp source, TypedTmp dest)
 {
-    switch (valueType.kind) {
+    ASSERT(source.type() == dest.type());
+    switch (source.type().kind) {
     case TypeKind::I64: {
         switch (accessWidth(op)) {
         case B3::Width8:
+#if USE(JSVALUE64)
             append(ZeroExtend8To32, source, dest);
+#elif USE(JSVALUE32_64)
+            append(ZeroExtend8To32, source.lo(), dest.lo());
+            append(Move, Arg::imm(0), dest.hi());
+#endif
             return;
         case B3::Width16:
+#if USE(JSVALUE64)
             append(ZeroExtend16To32, source, dest);
+#elif USE(JSVALUE32_64)
+            append(ZeroExtend16To32, source.lo(), dest.lo());
+            append(Move, Arg::imm(0), dest.hi());
+#endif
             return;
         case B3::Width32:
+#if USE(JSVALUE64)
             append(Move32, source, dest);
+#elif USE(JSVALUE32_64)
+            append(Move, source.lo(), dest.lo());
+            append(Move, Arg::imm(0), dest.hi());
+#endif
             return;
         case B3::Width64:
-            if (source == dest)
-                return;
-            append(Move, source, dest);
+            emitMove(source, dest);
             return;
         }
         return;
@@ -2455,9 +2471,7 @@ void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, Type valueType, Tm
             return;
         case B3::Width32:
         case B3::Width64:
-            if (source == dest)
-                return;
-            append(Move, source, dest);
+            emitMove(source, dest);
             return;
         }
         return;
@@ -2467,9 +2481,9 @@ void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, Type valueType, Tm
     }
 }
 
-void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, Type valueType, Tmp result)
+void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, TypedTmp result)
 {
-    sanitizeAtomicResult(op, valueType, result, result);
+    sanitizeAtomicResult(op, result, result);
 }
 
 TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode opcode, B3::Commutativity commutativity, Arg input, Arg address, TypedTmp oldValue)
@@ -2679,7 +2693,7 @@ inline TypedTmp AirIRGenerator::emitAtomicLoadOp(ExtAtomicOpType op, Type valueT
 
     if (accessWidth(op) != B3::Width8) {
         emitCheck([&] {
-            return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
+            return Inst(BranchTestPtr, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() || is32Bit() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
@@ -2696,20 +2710,20 @@ inline TypedTmp AirIRGenerator::emitAtomicLoadOp(ExtAtomicOpType op, Type valueT
         if (isValidForm(opcode.value(), Arg::Tmp, addrArg.kind(), Arg::Tmp)) {
             append(Move, Arg::imm(0), result);
             appendEffectful(opcode.value(), result, addrArg, result);
-            sanitizeAtomicResult(op, valueType, result);
+            sanitizeAtomicResult(op, result);
             return result;
         }
 
         if (isValidForm(opcode.value(), Arg::Tmp, addrArg.kind())) {
             append(Move, Arg::imm(0), result);
             appendEffectful(opcode.value(), result, addrArg);
-            sanitizeAtomicResult(op, valueType, result);
+            sanitizeAtomicResult(op, result);
             return result;
         }
     }
 
     appendGeneralAtomic(op, nonAtomicOpcode, B3::Commutative, Arg::imm(0), addrArg, result);
-    sanitizeAtomicResult(op, valueType, result);
+    sanitizeAtomicResult(op, result);
     return result;
 }
 
@@ -2921,20 +2935,20 @@ TypedTmp AirIRGenerator::emitAtomicBinaryRMWOp(ExtAtomicOpType op, Type valueTyp
     if (opcode) {
         if (isValidForm(opcode.value(), Arg::Tmp, addrArg.kind(), Arg::Tmp)) {
             appendEffectful(opcode.value(), value, addrArg, result);
-            sanitizeAtomicResult(op, valueType, result);
+            sanitizeAtomicResult(op, result);
             return result;
         }
 
         if (isValidForm(opcode.value(), Arg::Tmp, addrArg.kind())) {
             append(Move, value, result);
             appendEffectful(opcode.value(), result, addrArg);
-            sanitizeAtomicResult(op, valueType, result);
+            sanitizeAtomicResult(op, result);
             return result;
         }
     }
 
     appendGeneralAtomic(op, nonAtomicOpcode, commutativity, value, addrArg, result);
-    sanitizeAtomicResult(op, valueType, result);
+    sanitizeAtomicResult(op, result);
     return result;
 }
 
@@ -2987,7 +3001,7 @@ TypedTmp AirIRGenerator::emitAtomicCompareExchange(ExtAtomicOpType op, Type valu
 
     if (valueWidth == accessWidth) {
         appendStrongCAS(op, expected, value, addrArg, result);
-        sanitizeAtomicResult(op, valueType, result);
+        sanitizeAtomicResult(op, result);
         return result;
     }
 
@@ -2996,7 +3010,7 @@ TypedTmp AirIRGenerator::emitAtomicCompareExchange(ExtAtomicOpType op, Type valu
     BasicBlock* continuation = m_code.addBlock();
 
     TypedTmp truncatedExpected = valueType.isI64() ? g64() : g32();
-    sanitizeAtomicResult(op, valueType, expected, truncatedExpected);
+    sanitizeAtomicResult(op, expected, truncatedExpected);
 
     append(OPCODE_FOR_CANONICAL_WIDTH(Branch, valueWidth), Arg::relCond(MacroAssembler::NotEqual), expected, truncatedExpected);
     m_currentBlock->setSuccessors(B3::Air::FrequentedBlock(failureCase, B3::FrequencyClass::Rare), successCase);
@@ -3032,7 +3046,7 @@ TypedTmp AirIRGenerator::emitAtomicCompareExchange(ExtAtomicOpType op, Type valu
     m_currentBlock->setSuccessors(continuation);
 
     m_currentBlock = continuation;
-    sanitizeAtomicResult(op, valueType, result);
+    sanitizeAtomicResult(op, result);
     return result;
 }
 
