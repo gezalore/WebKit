@@ -924,7 +924,8 @@ private:
 
     void sanitizeAtomicResult(ExtAtomicOpType, TypedTmp source, TypedTmp dest);
     void sanitizeAtomicResult(ExtAtomicOpType, TypedTmp result);
-    TypedTmp appendGeneralAtomic(ExtAtomicOpType, B3::Air::Opcode nonAtomicOpcode, B3::Commutativity, Arg input, Arg addrArg, TypedTmp result);
+    template <typename InputType>
+    TypedTmp appendGeneralAtomic(ExtAtomicOpType, B3::Air::Opcode nonAtomicOpcode, B3::Commutativity, InputType input, Arg addrArg, TypedTmp result);
     TypedTmp appendStrongCAS(ExtAtomicOpType, TypedTmp expected, TypedTmp value, Arg addrArg, TypedTmp result);
 
     void unify(const ExpressionType dst, const ExpressionType source);
@@ -2486,8 +2487,11 @@ void AirIRGenerator::sanitizeAtomicResult(ExtAtomicOpType op, TypedTmp result)
     sanitizeAtomicResult(op, result, result);
 }
 
-TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode opcode, B3::Commutativity commutativity, Arg input, Arg address, TypedTmp oldValue)
+template<typename InputType>
+TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode opcode, B3::Commutativity commutativity, InputType input, Arg address, TypedTmp oldValue)
 {
+    static_assert(std::is_same_v<InputType, TypedTmp> || std::is_same_v<InputType, Arg>);
+
     B3::Width accessWidth = Wasm::accessWidth(op);
 
     auto newTmp = [&]() {
@@ -2496,27 +2500,39 @@ TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode
         return g32();
     };
 
-    auto tmp = [&](Arg arg) -> TypedTmp {
-        if (arg.isTmp())
-            return TypedTmp(arg.tmp(), accessWidth == B3::Width64 ? Types::I64 : Types::I32);
-        TypedTmp result = newTmp();
-        append(Move, arg, result);
-        return result;
+    auto tmp = [&]() -> TypedTmp {
+        if constexpr (std::is_same_v<InputType, Arg>) {
+            TypedTmp result = newTmp();
+#if USE(JSVALUE32_64)
+            if (result.isGPPair()) {
+                append(Move, input, result.lo());
+                append(Move, Arg::imm(0), result.hi());
+                return result;
+            }
+#endif
+            append(Move, input, result);
+            return result;
+        } else
+            return input;
     };
 
-    auto imm = [&](Arg arg) {
-        if (arg.isImm())
-            return arg;
+    auto imm = [&]() -> Arg {
+        if constexpr (std::is_same_v<InputType, Arg>) {
+            if (input.isImm())
+                return input;
+        }
         return Arg();
     };
 
-    auto bitImm = [&](Arg arg) {
-        if (arg.isBitImm())
-            return arg;
+    auto bitImm = [&]() -> Arg {
+        if constexpr (std::is_same_v<InputType, Arg>) {
+            if (input.isBitImm())
+                return input;
+        }
         return Arg();
     };
 
-    Tmp newValue = opcode == B3::Air::Nop ? tmp(input) : newTmp();
+    TypedTmp newValue = opcode == B3::Air::Nop ? tmp() : newTmp();
 
     // We need a CAS loop or a LL/SC loop. Using prepare/attempt jargon, we want:
     //
@@ -2532,12 +2548,14 @@ TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode
     auto* reloopBlock = m_code.addBlock();
     auto* doneBlock = m_code.addBlock();
 
+    if (isARM())
+        appendEffectful(MemoryFence);
     append(B3::Air::Jump);
     beginBlock->setSuccessors(reloopBlock);
     m_currentBlock = reloopBlock;
 
-    B3::Air::Opcode prepareOpcode;
     if (isX86()) {
+        B3::Air::Opcode prepareOpcode;
         switch (accessWidth) {
         case B3::Width8:
             prepareOpcode = Load8SignedExtendTo32;
@@ -2552,30 +2570,60 @@ TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode
             prepareOpcode = Move;
             break;
         }
+        appendEffectful(prepareOpcode, address, oldValue);
+    } else if (isARM64()) {
+        appendEffectful(OPCODE_FOR_WIDTH(LoadLinkAcq, accessWidth), address, oldValue);
     } else {
-        RELEASE_ASSERT(isARM64());
-        prepareOpcode = OPCODE_FOR_WIDTH(LoadLinkAcq, accessWidth);
+        RELEASE_ASSERT(isARM());
+        if (accessWidth == B3::Width64)
+            appendEffectful(LoadLinkPair32, address, oldValue.lo(), oldValue.hi());
+        else
+            appendEffectful(OPCODE_FOR_WIDTH(LoadLink, accessWidth), address, oldValue);
     }
-    appendEffectful(prepareOpcode, address, oldValue);
 
     if (opcode != B3::Air::Nop) {
         // FIXME: If we ever have to write this again, we need to find a way to share the code with
         // appendBinOp.
         // https://bugs.webkit.org/show_bug.cgi?id=169249
-        if (commutativity == B3::Commutative && imm(input) && isValidForm(opcode, Arg::Imm, Arg::Tmp, Arg::Tmp))
-            append(opcode, imm(input), oldValue, newValue);
-        else if (imm(input) && isValidForm(opcode, Arg::Tmp, Arg::Imm, Arg::Tmp))
-            append(opcode, oldValue, imm(input), newValue);
-        else if (commutativity == B3::Commutative && bitImm(input) && isValidForm(opcode, Arg::BitImm, Arg::Tmp, Arg::Tmp))
-            append(opcode, bitImm(input), oldValue, newValue);
+        if (is32Bit() && accessWidth == B3::Width64) {
+            TypedTmp inTmp = tmp();
+            switch(opcode) {
+            case Add64:
+                append(Add64, oldValue.hi(), oldValue.lo(), inTmp.hi(), inTmp.lo(), newValue.hi(), newValue.lo());
+                break;
+            case Sub64:
+                append(Sub64, oldValue.hi(), oldValue.lo(), inTmp.hi(), inTmp.lo(), newValue.hi(), newValue.lo());
+                break;
+            case And64:
+                append(And32, oldValue.hi(), inTmp.hi(), newValue.hi());
+                append(And32, oldValue.lo(), inTmp.lo(), newValue.lo());
+                break;
+            case Or64:
+                append(Or32, oldValue.hi(), inTmp.hi(), newValue.hi());
+                append(Or32, oldValue.lo(), inTmp.lo(), newValue.lo());
+                break;
+            case Xor64:
+                append(Xor32, oldValue.hi(), inTmp.hi(), newValue.hi());
+                append(Xor32, oldValue.lo(), inTmp.lo(), newValue.lo());
+                break;
+            default:
+                RELEASE_ASSERT_NOT_REACHED();
+                break;
+            }
+        } else if (commutativity == B3::Commutative && imm() && isValidForm(opcode, Arg::Imm, Arg::Tmp, Arg::Tmp))
+            append(opcode, imm(), oldValue, newValue);
+        else if (imm() && isValidForm(opcode, Arg::Tmp, Arg::Imm, Arg::Tmp))
+            append(opcode, oldValue, imm(), newValue);
+        else if (commutativity == B3::Commutative && bitImm() && isValidForm(opcode, Arg::BitImm, Arg::Tmp, Arg::Tmp))
+            append(opcode, bitImm(), oldValue, newValue);
         else if (isValidForm(opcode, Arg::Tmp, Arg::Tmp, Arg::Tmp))
-            append(opcode, oldValue, tmp(input), newValue);
+            append(opcode, oldValue, tmp(), newValue);
         else {
             append(Move, oldValue, newValue);
-            if (imm(input) && isValidForm(opcode, Arg::Imm, Arg::Tmp))
-                append(opcode, imm(input), newValue);
+            if (imm() && isValidForm(opcode, Arg::Imm, Arg::Tmp))
+                append(opcode, imm(), newValue);
             else
-                append(opcode, tmp(input), newValue);
+                append(opcode, tmp(), newValue);
         }
     }
 
@@ -2586,14 +2634,23 @@ TypedTmp AirIRGenerator::appendGeneralAtomic(ExtAtomicOpType op, B3::Air::Opcode
         append(Move, oldValue, eax);
         appendEffectful(casOpcode, Arg::statusCond(MacroAssembler::Success), eax, newValue, address);
 #endif
-    } else {
-        RELEASE_ASSERT(isARM64());
+    } else if (isARM64()) {
         TypedTmp boolResult = newTmp();
         appendEffectful(OPCODE_FOR_WIDTH(StoreCondRel, accessWidth), newValue, address, boolResult);
+        append(BranchTest32, Arg::resCond(MacroAssembler::Zero), boolResult, boolResult);
+    } else {
+        RELEASE_ASSERT(isARM());
+        TypedTmp boolResult = g32();
+        if (accessWidth == B3::Width64)
+            appendEffectful(StoreCondPair32, newValue.lo(), newValue.hi(), address, boolResult);
+        else
+            appendEffectful(OPCODE_FOR_WIDTH(StoreCond, accessWidth), newValue, address, boolResult);
         append(BranchTest32, Arg::resCond(MacroAssembler::Zero), boolResult, boolResult);
     }
     reloopBlock->setSuccessors(doneBlock, reloopBlock);
     m_currentBlock = doneBlock;
+    if (isARM())
+        appendEffectful(MemoryFence);
     return oldValue;
 }
 
@@ -2765,7 +2822,7 @@ inline void AirIRGenerator::emitAtomicStoreOp(ExtAtomicOpType op, Type valueType
 
     if (accessWidth(op) != B3::Width8) {
         emitCheck([&] {
-            return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
+            return Inst(BranchTestPtr, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() || is32Bit() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
@@ -2819,7 +2876,7 @@ TypedTmp AirIRGenerator::emitAtomicBinaryRMWOp(ExtAtomicOpType op, Type valueTyp
 
     if (accessWidth(op) != B3::Width8) {
         emitCheck([&] {
-            return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
+            return Inst(BranchTestPtr, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() || is32Bit() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });
@@ -2991,7 +3048,7 @@ TypedTmp AirIRGenerator::emitAtomicCompareExchange(ExtAtomicOpType op, Type valu
 
     if (accessWidth != B3::Width8) {
         emitCheck([&] {
-            return Inst(BranchTest64, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
+            return Inst(BranchTestPtr, nullptr, Arg::resCond(MacroAssembler::NonZero), newPtr, isX86() || is32Bit()  ? Arg::bitImm(sizeOfAtomicOpMemoryAccess(op) - 1) : Arg::bitImm64(sizeOfAtomicOpMemoryAccess(op) - 1));
         }, [=, this] (CCallHelpers& jit, const B3::StackmapGenerationParams&) {
             this->emitThrowException(jit, ExceptionType::OutOfBoundsMemoryAccess);
         });

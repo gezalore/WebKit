@@ -1286,48 +1286,54 @@ x86_64: AtomicXchg64 UD:G:64, UD:G:64 /effects
     Tmp, Addr
     Tmp, Index
 
-arm64: LoadLink8 U:G:8, ZD:G:8 /effects
+arm: LoadLink8 U:G:8, ZD:G:8 /effects
     SimpleAddr, Tmp
 
 arm64: LoadLinkAcq8 U:G:8, ZD:G:8 /effects
     SimpleAddr, Tmp
 
 # Super confusing fact: this returns 0 to mean success, 1 to mean failure.
-arm64: StoreCond8 U:G:8, D:G:8, EZD:G:8 /effects
+arm: StoreCond8 U:G:8, D:G:8, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
 
 arm64: StoreCondRel8 U:G:8, D:G:8, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
 
-arm64: LoadLink16 U:G:16, ZD:G:16 /effects
+arm: LoadLink16 U:G:16, ZD:G:16 /effects
     SimpleAddr, Tmp
 
 arm64: LoadLinkAcq16 U:G:16, ZD:G:16 /effects
     SimpleAddr, Tmp
 
-arm64: StoreCond16 U:G:16, D:G:16, EZD:G:8 /effects
+arm: StoreCond16 U:G:16, D:G:16, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
 
 arm64: StoreCondRel16 U:G:16, D:G:16, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
 
-arm64: LoadLink32 U:G:32, ZD:G:32 /effects
+arm: LoadLink32 U:G:32, ZD:G:32 /effects
     SimpleAddr, Tmp
 
 arm64: LoadLinkAcq32 U:G:32, ZD:G:32 /effects
     SimpleAddr, Tmp
 
-arm64: StoreCond32 U:G:32, D:G:32, EZD:G:8 /effects
+arm: StoreCond32 U:G:32, D:G:32, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
 
 arm64: StoreCondRel32 U:G:32, D:G:32, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
+
+armv7: LoadLinkPair32 U:G:64, D:G:32, D:G:32 /effects
+    SimpleAddr, Tmp, Tmp
 
 arm64: LoadLink64 U:G:64, ZD:G:64 /effects
     SimpleAddr, Tmp
 
 arm64: LoadLinkAcq64 U:G:64, ZD:G:64 /effects
     SimpleAddr, Tmp
+
+armv7: StoreCondPair32 U:G:32, U:G:32, D:G:64, EZD:G:8 /effects
+    Tmp, Tmp, SimpleAddr, Tmp
 
 arm64: StoreCond64 U:G:64, D:G:64, EZD:G:8 /effects
     Tmp, SimpleAddr, Tmp
