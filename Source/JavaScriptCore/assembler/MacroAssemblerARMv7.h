@@ -1043,6 +1043,30 @@ public:
         }
     }
 
+    void loadLink8(Address addr, RegisterID dest)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.ldrexb(dest, addr.base);
+    }
+
+    void loadLink16(Address addr, RegisterID dest)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.ldrexh(dest, addr.base);
+    }
+
+    void loadLink32(Address addr, RegisterID dest)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.ldrex(dest, addr.base, 0);
+    }
+
+    void loadLinkPair32(Address addr, RegisterID destLo, RegisterID destHi)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.ldrexd(destLo, destHi, addr.base);
+    }
+
     void storePair64(FPRegisterID src1, FPRegisterID src2, RegisterID dest, TrustedImm32 offset)
     {
         if ((src2 == (src1 + 1)) && !offset.m_value) {
@@ -1238,6 +1262,30 @@ public:
         ArmAddress armAddress = setupArmAddress(AbsoluteAddress(address));
         ASSERT(armAddress.type == ArmAddress::HasOffset);
         storePair32(src1, src2, Address(armAddress.base, armAddress.u.offset));
+    }
+
+    void storeCond8(RegisterID src, Address addr, RegisterID result)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.strexb(result, src, addr.base);
+    }
+
+    void storeCond16(RegisterID src, Address addr, RegisterID result)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.strexh(result, src, addr.base);
+    }
+
+    void storeCond32(RegisterID src, Address addr, RegisterID result)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.strex(result, src, addr.base, 0);
+    }
+
+    void storeCondPair32(RegisterID srcLo, RegisterID srcHi, Address addr, RegisterID result)
+    {
+        ASSERT(addr.offset == 0);
+        m_assembler.strexd(result, srcLo, srcHi, addr.base);
     }
 
     // Possibly clobbers src, but not on this architecture.

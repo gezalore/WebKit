@@ -577,8 +577,16 @@ private:
         OP_B_T1         = 0xD000,
         OP_B_T2         = 0xE000,
         OP_STRD_imm_T1  = 0xE840,
+        OP_STREX_T1     = 0xE840,
         OP_LDRD_imm_T1  = 0xE850,
+        OP_LDREX_T1     = 0xE850,
         OP_POP_T2       = 0xE8BD,
+        OP_STREXB_T1    = 0xE8C0,
+        OP_STREXD_T1    = 0xE8C0,
+        OP_STREXH_T1    = 0xE8C0,
+        OP_LDREXB_T1    = 0xE8D0,
+        OP_LDREXD_T1    = 0xE8D0,
+        OP_LDREXH_T1    = 0xE8D0,
         OP_PUSH_T2      = 0xE92D,
         OP_AND_reg_T2   = 0xEA00,
         OP_TST_reg_T2   = 0xEA10,
@@ -1406,6 +1414,36 @@ public:
         m_formatter.twoWordOp12Reg4Reg4Reg4Imm8(static_cast<OpcodeID1>(opcode), rn, rt, rt2, offset);
     }
 
+    ALWAYS_INLINE void ldrex(RegisterID rt, RegisterID rn, int32_t offset)
+    {
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc);
+        ASSERT(!(offset & ~0x3fc));
+        m_formatter.twoWordOp12Reg4Reg4Imm12(OP_LDREX_T1, rn, rt, (0xf << 8 | offset >> 2));
+    }
+
+    ALWAYS_INLINE void ldrexb(RegisterID rt, RegisterID rn)
+    {
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc);
+        m_formatter.twoWordOp12Reg4FourFours(OP_LDREXB_T1, rn, FourFours(rt, 0xf, 0x4, 0xf));
+    }
+
+    ALWAYS_INLINE void ldrexh(RegisterID rt, RegisterID rn)
+    {
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc);
+        m_formatter.twoWordOp12Reg4FourFours(OP_LDREXH_T1, rn, FourFours(rt, 0xf, 0x5, 0xf));
+    }
+
+    ALWAYS_INLINE void ldrexd(RegisterID rt, RegisterID rt2, RegisterID rn)
+    {
+        ASSERT(!BadReg(rt));
+        ASSERT(!BadReg(rt2));
+        ASSERT(rn != ARMRegisters::pc);
+        m_formatter.twoWordOp12Reg4FourFours(OP_LDREXD_T1, rn, FourFours(rt, rt2, 0x7, 0xf));
+    }
+
     void lsl(RegisterID rd, RegisterID rm, int32_t shiftAmount)
     {
         ASSERT(!BadReg(rd));
@@ -1907,6 +1945,49 @@ public:
         opcode |= (index << 8);
 
         m_formatter.twoWordOp12Reg4Reg4Reg4Imm8(static_cast<OpcodeID1>(opcode), rn, rt, rt2, offset);
+    }
+
+    ALWAYS_INLINE void strex(RegisterID rd, RegisterID rt, RegisterID rn, int32_t offset)
+    {
+        ASSERT(!BadReg(rd));
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc);
+        ASSERT(rd != rn);
+        ASSERT(rd != rt);
+        ASSERT(!(offset & ~0x3fc));
+        m_formatter.twoWordOp12Reg4Reg4Reg4Imm8(OP_STREX_T1, rn, rt, rd, offset >> 2);
+    }
+
+    ALWAYS_INLINE void strexb(RegisterID rd, RegisterID rt, RegisterID rn)
+    {
+        ASSERT(!BadReg(rd));
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc);
+        ASSERT(rd != rn);
+        ASSERT(rd != rt);
+        m_formatter.twoWordOp12Reg4FourFours(OP_STREXB_T1, rn, FourFours(rt, 0xf, 0x4, rd));
+    }
+
+    ALWAYS_INLINE void strexh(RegisterID rd, RegisterID rt, RegisterID rn)
+    {
+        ASSERT(!BadReg(rd));
+        ASSERT(!BadReg(rt));
+        ASSERT(rn != ARMRegisters::pc);
+        ASSERT(rd != rn);
+        ASSERT(rd != rt);
+        m_formatter.twoWordOp12Reg4FourFours(OP_STREXH_T1, rn, FourFours(rt, 0xf, 0x5, rd));
+    }
+
+    ALWAYS_INLINE void strexd(RegisterID rd, RegisterID rt, RegisterID rt2, RegisterID rn)
+    {
+        ASSERT(!BadReg(rd));
+        ASSERT(!BadReg(rt));
+        ASSERT(!BadReg(rt2));
+        ASSERT(rn != ARMRegisters::pc);
+        ASSERT(rd != rn);
+        ASSERT(rd != rt);
+        ASSERT(rd != rt2);
+        m_formatter.twoWordOp12Reg4FourFours(OP_STREXD_T1, rn, FourFours(rt, rt2, 0x7, rd));
     }
 
     ALWAYS_INLINE void sub(RegisterID rd, RegisterID rn, ARMThumbImmediate imm)
