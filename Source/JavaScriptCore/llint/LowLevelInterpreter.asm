@@ -756,7 +756,7 @@ end
 if C_LOOP or C_LOOP_WIN or ARM64 or ARM64E or X86_64 or X86_64_WIN or RISCV64
     const CalleeSaveRegisterCount = 0
 elsif ARMv7
-    const CalleeSaveRegisterCount = 7
+    const CalleeSaveRegisterCount = 7 + 2*8 # 7 32-bit GPRs + 8 64-bit FPRs
 elsif MIPS
     const CalleeSaveRegisterCount = 3
 elsif X86 or X86_WIN
@@ -772,6 +772,7 @@ const VMEntryTotalFrameSize = (CalleeRegisterSaveSize + sizeof VMEntryRecord + S
 macro pushCalleeSaves()
     if C_LOOP or C_LOOP_WIN or ARM64 or ARM64E or X86_64 or X86_64_WIN or RISCV64
     elsif ARMv7
+        emit "vpush.64 {d8-d15}"
         emit "push {r4-r6, r8-r11}"
     elsif MIPS
         emit "addiu $sp, $sp, -12"
@@ -795,6 +796,7 @@ macro popCalleeSaves()
     if C_LOOP or C_LOOP_WIN or ARM64 or ARM64E or X86_64 or X86_64_WIN or RISCV64
     elsif ARMv7
         emit "pop {r4-r6, r8-r11}"
+        emit "vpop.64 {d8-d15}"
     elsif MIPS
         emit "lw $s0, 0($sp)"
         emit "lw $s1, 4($sp)"
