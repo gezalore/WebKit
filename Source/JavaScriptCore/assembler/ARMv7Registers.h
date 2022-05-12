@@ -164,7 +164,7 @@
     macro(d4,  "d4",  0, 0)                     \
     macro(d5,  "d5",  0, 0)                     \
     macro(d6,  "d6",  0, 0)                     \
-    macro(d7,  "d7",  0, 1)                     \
+    macro(d7,  "d7",  0, 0)                     \
     macro(d8,  "d8",  0, 1)                     \
     macro(d9,  "d9",  0, 1)                     \
     macro(d10, "d10", 0, 1)                     \
