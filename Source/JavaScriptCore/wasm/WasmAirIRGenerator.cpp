@@ -3730,10 +3730,14 @@ Tmp AirIRGenerator::emitCatchImpl(CatchKind kind, ControlType& data, unsigned ex
 
     unsigned indexInBuffer = 0;
     auto loadFromScratchBuffer = [&] (TypedTmp result) {
-        size_t offset = sizeof(uint64_t) * indexInBuffer;
-        ++indexInBuffer;
         Tmp bufferPtr = Tmp(GPRInfo::argumentGPR0);
-        emitLoad(bufferPtr, offset, result);
+        if (result.isGPPair()) {
+            emitLoad(bufferPtr, sizeof(uint64_t) * indexInBuffer++, TypedTmp(result.lo(), Types::I32));
+            emitLoad(bufferPtr, sizeof(uint64_t) * indexInBuffer++, TypedTmp(result.hi(), Types::I32));
+            return;
+        }
+        emitLoad(bufferPtr, sizeof(uint64_t) * indexInBuffer++, result);
+        return;
     };
     forEachLiveValue([&] (TypedTmp tmp) {
         // We set our current ControlEntry's exception below after the patchpoint, it's
@@ -3862,12 +3866,12 @@ auto AirIRGenerator::addRethrow(unsigned, ControlType& data) -> PartialResult
     }
 #endif
 
-    bool isI32 = data.exception().type().isI32();
+    bool isGPPair = data.exception().isGPPair();
     PatchpointExceptionHandle handle = preparePatchpointForExceptions(patch, patchArgs);
-    patch->setGenerator([this, isI32, handle] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
+    patch->setGenerator([this, isGPPair, handle] (CCallHelpers& jit, const B3::StackmapGenerationParams& params) {
         AllowMacroScratchRegisterUsage allowScratch(jit);
         handle.generate(jit, params, this);
-        if (is32Bit() && isI32)
+        if (is32Bit() && !isGPPair)
             jit.move(CCallHelpers::TrustedImm32(0), GPRInfo::argumentGPR3);
         emitRethrowImpl(jit);
     });
