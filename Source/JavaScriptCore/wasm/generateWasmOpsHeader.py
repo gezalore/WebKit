@@ -267,6 +267,7 @@ struct Type {
         case TypeKind::Externref:
         case TypeKind::RefNull:
         case TypeKind::Ref:
+        case TypeKind::Rtt:
             return true;
         default:
             return false;
