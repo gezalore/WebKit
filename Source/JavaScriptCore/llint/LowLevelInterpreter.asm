@@ -770,10 +770,14 @@ const CalleeRegisterSaveSize = CalleeSaveRegisterCount * MachineRegisterSize
 const VMEntryTotalFrameSize = (CalleeRegisterSaveSize + sizeof VMEntryRecord + StackAlignment - 1) & ~StackAlignmentMask
 
 macro pushCalleeSaves()
+    # Note: Only registers that are in RegisterSet::calleeSaveRegisters(),
+    # but are not in RegisterSet::vmCalleeSaveRegisters() need to be saved here.
+    # I.e.: Only those registers that are callee save in the C ABI, but are not
+    # callee save in teh JIT ABI.
     if C_LOOP or C_LOOP_WIN or ARM64 or ARM64E or X86_64 or X86_64_WIN or RISCV64
     elsif ARMv7
         emit "vpush.64 {d15}"
-        emit "push {r4-r6, r8-r11}"
+        emit "push {r4-r6, r8-r9}"
     elsif MIPS
         emit "addiu $sp, $sp, -12"
         emit "sw $s0, 0($sp)" # csr0/metaData
@@ -795,7 +799,7 @@ end
 macro popCalleeSaves()
     if C_LOOP or C_LOOP_WIN or ARM64 or ARM64E or X86_64 or X86_64_WIN or RISCV64
     elsif ARMv7
-        emit "pop {r4-r6, r8-r11}"
+        emit "pop {r4-r6, r8-r9}"
         emit "vpop.64 {d15}"
     elsif MIPS
         emit "lw $s0, 0($sp)"
